@@ -1,0 +1,36 @@
+{
+  "name": "neko-brand-intelligence",
+  "version": "1.0.0",
+  "description": "Brand Intelligence Platform for Neko - Automated data collection and analysis",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
+    "fetch:reviews": "ts-node scripts/fetch-google-reviews.ts",
+    "fetch:articles": "ts-node scripts/fetch-articles.ts",
+    "fetch:all": "ts-node scripts/fetch-all.ts",
+    "schedule:reviews": "ts-node scripts/schedule-google-reviews.ts",
+    "clean:reviews": "ts-node scripts/cleanup-unknown-clinic-reviews.ts",
+    "generate:summaries": "ts-node scripts/generate-summaries.ts"
+  },
+  "keywords": [
+    "brand-intelligence",
+    "data-ingestion",
+    "supabase"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "cheerio": "^1.0.0",
+    "dotenv": "^16.3.1",
+    "node-cron": "^4.2.1",
+    "playwright": "^1.41.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "ts-node": "^10.9.2",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.3.3"
+  }
+}

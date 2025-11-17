@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Generate Summaries</title>
+</head>
+<body>
+  <h1>Generate Summaries</h1>
+  <button onclick="generate()">Click to Generate</button>
+  <pre id="result"></pre>
+
+  <script>
+    async function generate() {
+      const SERVICE_KEY = prompt('Enter your Supabase Service Role Key:');
+      if (!SERVICE_KEY) return;
+
+      document.getElementById('result').textContent = 'Generating... This will take 5-10 minutes.';
+
+      try {
+        const response = await fetch('https://cqlopsqqqzzkfpmcntbv.supabase.co/functions/v1/generate-summaries', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${SERVICE_KEY}`
+          },
+          body: '{}'
+        });
+
+        const data = await response.json();
+        document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+      } catch (error) {
+        document.getElementById('result').textContent = 'Error: ' + error.message;
+      }
+    }
+  </script>
+</body>
+</html>
+

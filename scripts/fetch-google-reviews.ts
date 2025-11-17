@@ -1,0 +1,35 @@
+/**
+ * Manual script to run Google Reviews ingestion
+ */
+
+import * as dotenv from 'dotenv';
+import { FetchGoogleReviewsJob } from '../src/ingestion/jobs/fetchGoogleReviewsJob';
+
+dotenv.config();
+
+async function main() {
+  console.log('🚀 Starting Google Reviews Ingestion...\n');
+
+  const job = new FetchGoogleReviewsJob();
+  const result = await job.run();
+
+  console.log('\n📊 Final Results:');
+  console.log(`   ✅ Added: ${result.added}`);
+  console.log(`   ⏭️  Skipped: ${result.skipped}`);
+  console.log(`   ❌ Errors: ${result.errors.length}`);
+
+  if (result.errors.length > 0) {
+    console.log('\n⚠️  Errors:');
+    result.errors.forEach((err) => {
+      console.log(`   - ${err.item}: ${err.error}`);
+    });
+  }
+
+  process.exit(result.errors.length > 0 ? 1 : 0);
+}
+
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});
+

@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nekovibe</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="preconnect" href="https://rsms.me/" />
+  </head>
+  <body
+    data-function-url="YOUR_SUPABASE_URL/functions/v1/nekovibe-chat"
+    data-apikey="YOUR_SUPABASE_ANON_KEY"
+  >
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="eyebrow">nekovibe</p>
+          <h1>Ask anything about Neko Health</h1>
+          <p class="subtitle">
+            Powered by real customer reviews. Choose your sources and let the assistant surface the insights.
+          </p>
+        </div>
+        <div class="source-switcher" role="group" aria-label="Knowledge sources">
+          <label class="source-pill">
+            <input type="checkbox" value="reviews" name="sources" checked />
+            <span>Reviews</span>
+          </label>
+          <label class="source-pill disabled">
+            <input type="checkbox" value="articles" name="sources" disabled />
+            <span>Articles / Press</span>
+          </label>
+          <label class="source-pill disabled">
+            <input type="checkbox" value="social" name="sources" disabled />
+            <span>Social</span>
+          </label>
+        </div>
+      </header>
+
+      <main>
+        <section id="chat-stream" aria-live="polite">
+          <div class="empty-state">
+            <p>Try “What do patients say about the Covent Garden clinic?”</p>
+            <p>or “Summarize top concerns from the last 30 days”.</p>
+          </div>
+        </section>
+
+        <form id="ask-form">
+          <div class="input-wrapper">
+            <textarea
+              name="prompt"
+              id="prompt"
+              rows="3"
+              placeholder="Ask anything…"
+              autocomplete="off"
+            ></textarea>
+            <button type="submit" aria-label="Send">
+              <span>Send</span>
+            </button>
+          </div>
+        </form>
+      </main>
+    </div>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
+
