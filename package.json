@@ -11,7 +11,9 @@
     "fetch:all": "ts-node scripts/fetch-all.ts",
     "schedule:reviews": "ts-node scripts/schedule-google-reviews.ts",
     "clean:reviews": "ts-node scripts/cleanup-unknown-clinic-reviews.ts",
-    "generate:summaries": "ts-node scripts/generate-summaries.ts"
+    "generate:summaries": "ts-node scripts/generate-summaries.ts",
+    "fetch:perplexity:comprehensive": "ts-node scripts/fetch-perplexity-insights.ts comprehensive",
+    "fetch:perplexity:recent": "ts-node scripts/fetch-perplexity-insights.ts last_7_days"
   },
   "keywords": [
     "brand-intelligence",

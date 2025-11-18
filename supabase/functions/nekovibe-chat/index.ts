@@ -66,6 +66,9 @@ serve(async (req) => {
     // Step 1: Fetch relevant summaries
     const summaries = await fetchSummaries(supabase, detectedClinics, detectedSourceType);
 
+    // Step 1.5: Fetch Perplexity insights (comprehensive + recent)
+    const perplexityInsights = await fetchPerplexityInsights(supabase);
+
     // Step 2: Perform targeted text search on feedback_items
     const searchResults = await searchFeedbackItems(
       supabase,
@@ -74,8 +77,8 @@ serve(async (req) => {
       detectedSourceType,
     );
 
-    // Step 3: Build single LLM prompt with summaries + snippets
-    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics);
+    // Step 3: Build single LLM prompt with summaries + snippets + Perplexity insights
+    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights);
 
     return respond(
       {
@@ -281,16 +284,58 @@ function extractKeywords(prompt: string): string[] {
   return [...new Set(words)].slice(0, 5);
 }
 
+async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
+  const insights: any[] = [];
+
+  // Fetch both comprehensive and recent insights
+  const { data: comprehensive } = await supabase
+    .from("perplexity_insights")
+    .select("*")
+    .eq("scope", "comprehensive")
+    .single();
+
+  if (comprehensive) {
+    insights.push({
+      label: "[Perplexity: Comprehensive Market Analysis]",
+      scope: "comprehensive",
+      ...comprehensive,
+    });
+  }
+
+  const { data: recent } = await supabase
+    .from("perplexity_insights")
+    .select("*")
+    .eq("scope", "last_7_days")
+    .single();
+
+  if (recent) {
+    insights.push({
+      label: "[Perplexity: Latest 7 Days News & Trends]",
+      scope: "last_7_days",
+      ...recent,
+    });
+  }
+
+  return insights;
+}
+
 async function generateAnswer(
   prompt: string,
   summaries: any[],
   searchResults: any[],
   clinics: string[],
+  perplexityInsights: any[] = [],
 ): Promise<string | null> {
   // Build context blocks
   const summariesBlock = summaries
     .map((s) => `${s.label}\n${s.summary_text}`)
     .join("\n\n---\n\n");
+
+  const perplexityBlock = perplexityInsights.length > 0
+    ? perplexityInsights
+        .map((p) => `${p.label}\n${p.response_text}\n\nCitations: ${JSON.stringify(p.citations || [])}`)
+        .join("\n\n---\n\n")
+    : "";
 
   const snippetsBlock = searchResults
     .map((item, idx) => {
@@ -323,6 +368,9 @@ CRITICAL RULES:
 
 Context - Summaries (overall patterns):
 ${summariesBlock || "No summaries available."}
+
+Context - Perplexity Market Intelligence (comprehensive web analysis):
+${perplexityBlock || "No Perplexity insights available."}
 
 Context - Example Snippets (concrete examples):
 ${snippetsBlock || "No specific examples found."}
