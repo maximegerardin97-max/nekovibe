@@ -11,8 +11,8 @@ const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const openaiApiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
 const openaiModel = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 const maxSearchResults = Number(Deno.env.get("NEKOVIBE_SEARCH_MAX_RESULTS") ?? "30");
-const reviewFetchLimit = Number(Deno.env.get("NEKOVIBE_REVIEW_FETCH_LIMIT") ?? "400");
-const chunkSize = Number(Deno.env.get("NEKOVIBE_CHUNK_SIZE") ?? "40");
+const reviewFetchLimit = Number(Deno.env.get("NEKOVIBE_REVIEW_FETCH_LIMIT") ?? "300");
+const chunkSize = Number(Deno.env.get("NEKOVIBE_CHUNK_SIZE") ?? "25");
 
 const CLINIC_MATCHERS = [
   { name: "Neko Health Marylebone", tokens: ["marylebone", "w1"] },
@@ -401,10 +401,27 @@ function truncate(text: string, max = 400): string {
   return text.length > max ? `${text.slice(0, max - 1).trim()}…` : text;
 }
 
+type RatingFocus = "all" | "positive" | "negative" | "nonfive";
+
+function detectRatingFocus(prompt: string): RatingFocus {
+  const lowered = prompt.toLowerCase();
+  if (/(complain|bad|issue|problem|negative|angry|1 star|2 star|3 star|not happy|frustrat)/.test(lowered)) {
+    return "negative";
+  }
+  if (/(positive|great|best|amazing|5 star|happy|love|delight|recommend)/.test(lowered)) {
+    return "positive";
+  }
+  if (/(not 5|non 5|less than 5|under 5|not five)/.test(lowered)) {
+    return "nonfive";
+  }
+  return "all";
+}
+
 async function countReviews(
   supabase: any,
   clinicFilter: string[] | null,
-  filterFn: ((query: any) => any) | null,
+  ratingFocus: RatingFocus,
+  exactRating?: number,
 ): Promise<number> {
   let query = supabase.from("google_reviews").select("id", { count: "exact", head: true });
 
@@ -412,8 +429,10 @@ async function countReviews(
     query = query.in("clinic_name", clinicFilter);
   }
 
-  if (filterFn) {
-    query = filterFn(query);
+  query = applyRatingFilter(query, ratingFocus);
+
+  if (typeof exactRating === "number") {
+    query = query.eq("rating", exactRating);
   }
 
   const { count, error } = await query;
@@ -425,25 +444,43 @@ async function countReviews(
   return count ?? 0;
 }
 
-function buildReviewsQuery(
+function applyRatingFilter(query: any, ratingFocus: RatingFocus) {
+  if (ratingFocus === "positive") {
+    return query.gte("rating", 4);
+  }
+  if (ratingFocus === "negative") {
+    return query.lte("rating", 3);
+  }
+  if (ratingFocus === "nonfive") {
+    return query.neq("rating", 5);
+  }
+  return query;
+}
+
+async function fetchReviewsForFallback(
   supabase: any,
   clinicFilter: string[] | null,
-  filterFn: (query: any) => any,
-) {
+  ratingFocus: RatingFocus,
+): Promise<any[]> {
   let query = supabase
     .from("google_reviews")
     .select("rating, clinic_name, author_name, text, published_at")
-    .order("published_at", { ascending: false });
+    .order("published_at", { ascending: false })
+    .limit(reviewFetchLimit);
 
   if (clinicFilter && clinicFilter.length) {
     query = query.in("clinic_name", clinicFilter);
   }
 
-  if (filterFn) {
-    query = filterFn(query);
+  query = applyRatingFilter(query, ratingFocus);
+
+  const { data, error } = await query;
+  if (error) {
+    console.error("Error fetching reviews for fallback:", error);
+    return [];
   }
 
-  return query;
+  return data ?? [];
 }
 
 async function generateFallbackAnswer(
@@ -451,67 +488,72 @@ async function generateFallbackAnswer(
   prompt: string,
   clinics: string[],
 ): Promise<string | null> {
-  // Fast SQL-based fallback: compute counts + sample snippets without long OpenAI loops
-  console.log("Fallback: running aggregate queries on google_reviews");
-
   const clinicFilter = clinics.length ? clinics : null;
+  const ratingFocus = detectRatingFocus(prompt);
 
-  const totalReviews = await countReviews(supabase, clinicFilter, null);
-  const nonFive = await countReviews(supabase, clinicFilter, (query: any) => query.neq("rating", 5));
-  const perRating = await Promise.all(
-    [1, 2, 3, 4, 5].map(async (rating) => ({
-      rating,
-      count: await countReviews(supabase, clinicFilter, (query: any) => query.eq("rating", rating)),
-    })),
-  );
+  const [totalReviews, focusCount, perRatingCounts] = await Promise.all([
+    countReviews(supabase, clinicFilter, "all"),
+    countReviews(supabase, clinicFilter, ratingFocus),
+    Promise.all([1, 2, 3, 4, 5].map((rating) => countReviews(supabase, clinicFilter, "all", rating))),
+  ]);
 
-  const { data: sampleNonFive } = await buildReviewsQuery(
-    supabase,
-    clinicFilter,
-    (query: any) => query.neq("rating", 5),
-  )
-    .limit(5)
-    .order("published_at", { ascending: false });
+  const reviews = await fetchReviewsForFallback(supabase, clinicFilter, ratingFocus);
+  if (!reviews.length) {
+    return `I couldn't find relevant reviews for that request. Try a different clinic or timeframe.`;
+  }
 
-  const { data: recentPositive } = await buildReviewsQuery(
-    supabase,
-    clinicFilter,
-    (query: any) => query.eq("rating", 5),
-  )
-    .limit(3)
-    .order("published_at", { ascending: false });
+  const chunks = chunkArray(reviews, chunkSize);
+  const chunkSummaries: string[] = [];
 
-  const buildSnippet = (review: any) => {
-    const date = review?.published_at ? new Date(review.published_at).toISOString().split("T")[0] : "unknown date";
-    const clinic = review?.clinic_name || "Unknown clinic";
-    const author = review?.author_name || "Anonymous";
-    const text = truncate(review?.text ?? "", 320);
-    return `• ${review.rating}★ — ${clinic} (${date}) by ${author}: ${text}`;
-  };
+  for (const chunk of chunks) {
+    const chunkContext = chunk
+      .map((rev: any) => {
+        const date = rev.published_at ? new Date(rev.published_at).toISOString().split("T")[0] : "unknown date";
+        const snippet = truncate(rev.text ?? "", 380);
+        return `Rating: ${rev.rating}/5 | Clinic: ${rev.clinic_name} | Date: ${date}\n${snippet}`;
+      })
+      .join("\n\n");
 
-  const nonFiveBlock =
-    sampleNonFive && sampleNonFive.length
-      ? sampleNonFive.map(buildSnippet).join("\n")
-      : "No recent sub-5★ reviews available.";
+    const chunkPrompt = `You are analyzing customer reviews for Neko Health.
 
-  const positiveBlock =
-    recentPositive && recentPositive.length ? recentPositive.map(buildSnippet).join("\n") : "Not enough recent 5★ reviews.";
+Question: "${prompt}"
+Rating focus: ${ratingFocus}
 
-  const perRatingText = perRating
-    .map((item) => `${item.rating}★: ${item.count}`)
+Reviews:
+${chunkContext}
+
+Summarize the key points that answer the question. Highlight recurring themes, quantify counts when possible, and mention strong quotes or issues. Be concise but specific.`;
+
+    const summary = await callOpenAI(chunkPrompt, false);
+    if (summary) {
+      chunkSummaries.push(summary);
+    }
+  }
+
+  const ratingBreakdown = [1, 2, 3, 4, 5]
+    .map((rating, idx) => `${rating}★: ${perRatingCounts[idx] ?? 0}`)
     .join(" | ");
 
-  return [
-    `Total reviews analyzed${clinicFilter ? ` for ${clinicFilter.join(", ")}` : ""}: ${totalReviews}`,
-    `Not 5★: ${nonFive}`,
-    `Breakdown → ${perRatingText}`,
-    ``,
-    `Recent sub-5★ feedback:`,
-    nonFiveBlock,
-    ``,
-    `Recent 5★ highlights:`,
-    positiveBlock,
-  ].join("\n");
+  const statsBlock = `Total reviews analyzed: ${totalReviews}\nFocus subset (${ratingFocus}): ${focusCount}\nRating breakdown: ${ratingBreakdown}`;
+
+  const finalPrompt = `You are Nekovibe, an expert analyst. Combine the following chunk insights and stats to answer the question "${prompt}".
+
+Context:
+${statsBlock}
+
+Chunk insights:
+${chunkSummaries.map((s, idx) => `Chunk ${idx + 1}:\n${s}`).join("\n\n")}
+
+Deliver a single cohesive answer. Reference the rating focus when helpful, quantify sentiment, and mention concrete examples.`;
+
+  const finalAnswer = await callOpenAI(finalPrompt, true);
+  return (
+    finalAnswer ??
+    `${statsBlock}\n\nTop insights:\n${chunkSummaries
+      .slice(0, 2)
+      .map((s, idx) => `${idx + 1}. ${s}`)
+      .join("\n")}`
+  );
 }
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
