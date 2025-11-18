@@ -48,7 +48,7 @@ serve(async (req) => {
     const detectedClinics = detectClinics(prompt);
     const detectedSourceType = detectSourceType(prompt, sources);
 
-    // If fallback is requested, use old chunking approach
+    // If fallback is requested, run raw data analysis (fast SQL, no LLM)
     if (useFallback) {
       const fallbackAnswer = await generateFallbackAnswer(supabase, prompt, detectedClinics);
       return respond(
@@ -56,7 +56,7 @@ serve(async (req) => {
           answer: fallbackAnswer ?? "I couldn't generate a fallback answer right now.",
           usedFallback: true,
           usedSources: ["reviews"],
-          model: openaiModel,
+          model: "raw-data",
           clinicsConsidered: detectedClinics.length ? detectedClinics : "all clinics",
         },
         200,
@@ -401,110 +401,117 @@ function truncate(text: string, max = 400): string {
   return text.length > max ? `${text.slice(0, max - 1).trim()}…` : text;
 }
 
+async function countReviews(
+  supabase: any,
+  clinicFilter: string[] | null,
+  filterFn: ((query: any) => any) | null,
+): Promise<number> {
+  let query = supabase.from("google_reviews").select("id", { count: "exact", head: true });
+
+  if (clinicFilter && clinicFilter.length) {
+    query = query.in("clinic_name", clinicFilter);
+  }
+
+  if (filterFn) {
+    query = filterFn(query);
+  }
+
+  const { count, error } = await query;
+  if (error) {
+    console.error("Count query failed:", error);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
+function buildReviewsQuery(
+  supabase: any,
+  clinicFilter: string[] | null,
+  filterFn: (query: any) => any,
+) {
+  let query = supabase
+    .from("google_reviews")
+    .select("rating, clinic_name, author_name, text, published_at")
+    .order("published_at", { ascending: false });
+
+  if (clinicFilter && clinicFilter.length) {
+    query = query.in("clinic_name", clinicFilter);
+  }
+
+  if (filterFn) {
+    query = filterFn(query);
+  }
+
+  return query;
+}
+
 async function generateFallbackAnswer(
   supabase: any,
   prompt: string,
   clinics: string[],
 ): Promise<string | null> {
-  // Fallback: Use old chunking approach with google_reviews table
-  // Fetch ALL reviews (no clinic filter, no limit) for comprehensive analysis
-  console.log("Fallback: Fetching ALL reviews from google_reviews table");
-  
-  // Only filter by clinic if the question is specifically about one clinic
-  // For general questions (like "how many reviews are not 5 stars"), get ALL reviews
-  const isSpecificClinicQuestion = clinics.length > 0 && /\b(only|just|specifically|that clinic|this clinic)\b/i.test(prompt);
-  
-  if (isSpecificClinicQuestion && clinics.length > 0) {
-    console.log(`Filtering by clinics: ${clinics.join(", ")}`);
-  } else {
-    console.log("No clinic filter - fetching all reviews");
-  }
+  // Fast SQL-based fallback: compute counts + sample snippets without long OpenAI loops
+  console.log("Fallback: running aggregate queries on google_reviews");
 
-  // Fetch ALL reviews with pagination
-  let allReviews: any[] = [];
-  let page = 0;
-  const pageSize = 1000; // Supabase max per request
-  
-  while (true) {
-    // Rebuild query for each page to avoid state issues
-    let pageQuery = supabase
-      .from("google_reviews")
-      .select("clinic_name, author_name, rating, text, published_at")
-      .order("published_at", { ascending: false });
-    
-    if (isSpecificClinicQuestion && clinics.length > 0) {
-      pageQuery = pageQuery.in("clinic_name", clinics);
-    }
-    
-    const { data: pageReviews, error } = await pageQuery
-      .range(page * pageSize, (page + 1) * pageSize - 1);
-    
-    if (error) {
-      console.error("Error fetching reviews:", error);
-      break;
-    }
-    
-    if (!pageReviews || pageReviews.length === 0) {
-      break; // No more reviews
-    }
-    
-    allReviews = allReviews.concat(pageReviews);
-    console.log(`Fetched page ${page + 1}: ${pageReviews.length} reviews (total: ${allReviews.length})`);
-    
-    if (pageReviews.length < pageSize) {
-      break; // Last page
-    }
-    
-    page++;
-    
-    // Safety limit: don't fetch more than 10,000 reviews
-    if (allReviews.length >= 10000) {
-      console.warn("Reached safety limit of 10,000 reviews");
-      break;
-    }
-  }
-  
-  if (allReviews.length === 0) {
-    console.log("No reviews found");
-    return null;
-  }
+  const clinicFilter = clinics.length ? clinics : null;
 
-  console.log(`Fallback: Processing ${allReviews.length} total reviews in chunks of ${chunkSize}`);
-  const reviews = allReviews;
+  const totalReviews = await countReviews(supabase, clinicFilter, null);
+  const nonFive = await countReviews(supabase, clinicFilter, (query: any) => query.neq("rating", 5));
+  const perRating = await Promise.all(
+    [1, 2, 3, 4, 5].map(async (rating) => ({
+      rating,
+      count: await countReviews(supabase, clinicFilter, (query: any) => query.eq("rating", rating)),
+    })),
+  );
 
-  const chunks = chunkArray(reviews, chunkSize);
-  const chunkSummaries: string[] = [];
+  const { data: sampleNonFive } = await buildReviewsQuery(
+    supabase,
+    clinicFilter,
+    (query: any) => query.neq("rating", 5),
+  )
+    .limit(5)
+    .order("published_at", { ascending: false });
 
-  for (const chunk of chunks) {
-      const chunkContext = chunk
-      .map((rev: any) => {
-          const date = rev.published_at ? new Date(rev.published_at).toISOString().split("T")[0] : "unknown";
-          const snippet = truncate(rev.text ?? "", 480);
-          return `Clinic: ${rev.clinic_name}\nDate: ${date}\nRating: ${rev.rating}/5\nAuthor: ${rev.author_name}\nReview: ${snippet}`;
-        })
-        .join("\n\n");
+  const { data: recentPositive } = await buildReviewsQuery(
+    supabase,
+    clinicFilter,
+    (query: any) => query.eq("rating", 5),
+  )
+    .limit(3)
+    .order("published_at", { ascending: false });
 
-      const chunkPrompt = `Question: """${prompt}"""\n\nReviews:\n${chunkContext}\n\nSummarize only what is relevant to the question above. Highlight concrete insights, sentiment, and actionable details. Be specific with numbers and counts when the question asks for them.`;
+  const buildSnippet = (review: any) => {
+    const date = review?.published_at ? new Date(review.published_at).toISOString().split("T")[0] : "unknown date";
+    const clinic = review?.clinic_name || "Unknown clinic";
+    const author = review?.author_name || "Anonymous";
+    const text = truncate(review?.text ?? "", 320);
+    return `• ${review.rating}★ — ${clinic} (${date}) by ${author}: ${text}`;
+  };
 
-      const summary = await callOpenAI(chunkPrompt, false);
-      chunkSummaries.push(summary ?? "(no insight)");
-      console.log(`Processed chunk ${chunkSummaries.length}/${chunks.length}`);
-    }
+  const nonFiveBlock =
+    sampleNonFive && sampleNonFive.length
+      ? sampleNonFive.map(buildSnippet).join("\n")
+      : "No recent sub-5★ reviews available.";
 
-    const finalPrompt = `You are Nekovibe, an expert analyst. Combine the insights below into a single, crisp answer for the question "${prompt}". 
+  const positiveBlock =
+    recentPositive && recentPositive.length ? recentPositive.map(buildSnippet).join("\n") : "Not enough recent 5★ reviews.";
 
-CRITICAL: If the question asks for a count, number, or total, you MUST provide the exact number. Add up counts from all chunks if needed. Be precise and quantitative.
+  const perRatingText = perRating
+    .map((item) => `${item.rating}★: ${item.count}`)
+    .join(" | ");
 
-Prioritize specifics, quantify whenever possible, and surface patterns or outliers.
-
-Total reviews analyzed: ${reviews.length}
-
-Chunk insights:
-${chunkSummaries.map((s, idx) => `Chunk ${idx + 1}:\n${s}`).join("\n\n")}
-`;
-
-  console.log(`Fallback: Generating final answer from ${chunkSummaries.length} chunk summaries`);
-  return await callOpenAI(finalPrompt, true);
+  return [
+    `Total reviews analyzed${clinicFilter ? ` for ${clinicFilter.join(", ")}` : ""}: ${totalReviews}`,
+    `Not 5★: ${nonFive}`,
+    `Breakdown → ${perRatingText}`,
+    ``,
+    `Recent sub-5★ feedback:`,
+    nonFiveBlock,
+    ``,
+    `Recent 5★ highlights:`,
+    positiveBlock,
+  ].join("\n");
 }
 
 function chunkArray<T>(arr: T[], size: number): T[][] {
