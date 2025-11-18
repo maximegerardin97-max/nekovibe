@@ -66,7 +66,7 @@ serve(async (req) => {
     // Step 1: Fetch relevant summaries
     const summaries = await fetchSummaries(supabase, detectedClinics, detectedSourceType);
 
-    // Step 1.5: Fetch Perplexity insights ONLY if articles/press source is selected
+    // Step 1.5: Fetch Tavily/Web insights ONLY if articles/press source is selected
     const hasArticlesSource = sources.includes("articles");
     const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
 
@@ -78,7 +78,7 @@ serve(async (req) => {
       detectedSourceType,
     );
 
-    // Step 3: Build single LLM prompt with summaries + snippets + Perplexity insights (if articles selected)
+    // Step 3: Build single LLM prompt with summaries + snippets + Tavily/Web insights (if articles selected)
     const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights);
 
     return respond(
@@ -297,7 +297,7 @@ async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
 
   if (comprehensive && !comprehensiveError) {
     insights.push({
-      label: "[Perplexity: Comprehensive Market Analysis]",
+      label: "[Web Search: Comprehensive Market Analysis]",
       scope: "comprehensive",
       ...comprehensive,
     });
@@ -311,7 +311,7 @@ async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
 
   if (recent && !recentError) {
     insights.push({
-      label: "[Perplexity: Latest 7 Days News & Trends]",
+      label: "[Web Search: Latest 7 Days News & Trends]",
       scope: "last_7_days",
       ...recent,
     });
@@ -320,9 +320,9 @@ async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
   // If no insights available, return placeholder
   if (insights.length === 0) {
     insights.push({
-      label: "[Perplexity: Market Intelligence]",
+      label: "[Web Search: Market Intelligence]",
       scope: "unavailable",
-      response_text: "Perplexity insights are currently unavailable. The system is configured to fetch comprehensive market analysis and recent news trends, but data collection is pending. Once available, this will include web-wide analysis of Neko Health mentions, sentiment, and trends.",
+      response_text: "Web search insights are currently unavailable. The system is configured to fetch comprehensive market analysis and recent news trends, but data collection is pending. Once available, this will include web-wide analysis of Neko Health mentions, sentiment, and trends.",
       citations: [],
     });
   }
@@ -380,8 +380,8 @@ CRITICAL RULES:
 Context - Summaries (overall patterns):
 ${summariesBlock || "No summaries available."}
 
-Context - Perplexity Market Intelligence (comprehensive web analysis):
-${perplexityBlock || "No Perplexity insights available."}
+Context - Web Search Market Intelligence (comprehensive web analysis):
+${perplexityBlock || "No web search insights available."}
 
 Context - Example Snippets (concrete examples):
 ${snippetsBlock || "No specific examples found."}
