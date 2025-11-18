@@ -66,24 +66,27 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
+textarea.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    form.requestSubmit();
+  }
+});
+
 function appendMessage(message, isTemporary = false) {
   const bubble = document.createElement("div");
   bubble.classList.add("chat-bubble", message.role === "user" ? "user" : "assistant");
   bubble.dataset.messageId = isTemporary ? createId() : "";
+  bubble.classList.add("chat-bubble--enter");
   
-  if (message.role === "assistant" && !isTemporary && message.prompt) {
-    // Add button for assistant messages with prompt
-    const contentDiv = document.createElement("div");
-    contentDiv.innerText = message.content;
-    bubble.appendChild(contentDiv);
-    
-    const button = document.createElement("button");
-    button.className = "query-full-dataset-btn";
-    button.innerText = "Query full dataset";
-    button.onclick = () => queryFullDataset(message.prompt, message.sources, bubble);
-    bubble.appendChild(button);
+  if (isTemporary && message.role === "assistant") {
+    bubble.classList.add("pending");
+    bubble.innerHTML = `
+      <div class="bubble-spinner" aria-hidden="true"></div>
+      <span>${message.content}</span>
+    `;
   } else {
-    bubble.innerText = message.content;
+    renderBubbleContent(bubble, { ...message, isTemporary });
   }
   
   chatStream.appendChild(bubble);
@@ -98,26 +101,31 @@ function replaceMessage(messageId, newMessage) {
     return;
   }
   bubble.className = `chat-bubble ${newMessage.role === "user" ? "user" : "assistant"}`;
-  
-  // Clear existing content
+  bubble.classList.remove("pending");
+  bubble.classList.add("chat-bubble--enter");
+  renderBubbleContent(bubble, newMessage);
+  delete bubble.dataset.messageId;
+}
+
+function renderBubbleContent(bubble, message) {
   bubble.innerHTML = "";
   
-  if (newMessage.role === "assistant" && newMessage.prompt) {
-    // Add content and button
+  if (message.role === "assistant" && message.prompt && !message.isTemporary) {
     const contentDiv = document.createElement("div");
-    contentDiv.innerText = newMessage.content;
+    contentDiv.textContent = message.content;
     bubble.appendChild(contentDiv);
     
     const button = document.createElement("button");
     button.className = "query-full-dataset-btn";
     button.innerText = "Query full dataset";
-    button.onclick = () => queryFullDataset(newMessage.prompt, newMessage.sources, bubble);
+    button.onclick = () => queryFullDataset(message.prompt, message.sources, bubble);
     bubble.appendChild(button);
-  } else {
-    bubble.innerText = newMessage.content;
+    return;
   }
   
-  delete bubble.dataset.messageId;
+  const content = document.createElement("div");
+  content.textContent = message.content;
+  bubble.appendChild(content);
 }
 
 async function queryFullDataset(prompt, sources, bubbleElement) {
