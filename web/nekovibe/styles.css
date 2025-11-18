@@ -22,6 +22,43 @@
   font-variant-numeric: tabular-nums;
 }
 
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes bubbleSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes spinnerPulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+  50% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.8);
+    opacity: 0.4;
+  }
+}
+
 *,
 *::before,
 *::after {
@@ -31,11 +68,12 @@
 body {
   margin: 0;
   min-height: 100vh;
-  background: var(--bg-main);
+  background: radial-gradient(circle at top, rgba(255, 231, 164, 0.35), transparent 60%), var(--bg-main);
   padding: 3rem clamp(1.5rem, 4vw, 4rem);
   display: flex;
   justify-content: center;
   color: var(--text-main);
+  animation: pageFadeIn 0.7s ease forwards;
 }
 
 .app-shell {
@@ -129,6 +167,11 @@ body {
   max-width: 85%;
   box-shadow: 0 20px 40px rgba(30, 35, 40, 0.08);
   border: 1px solid transparent;
+  animation: bubbleSlideIn 0.3s ease;
+}
+
+.chat-bubble--enter {
+  animation: bubbleSlideIn 0.3s ease;
 }
 
 .chat-bubble.user {
@@ -145,6 +188,21 @@ body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
+}
+
+.chat-bubble.pending {
+  flex-direction: row;
+  align-items: center;
+  color: var(--text-subtle);
+}
+
+.bubble-spinner {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--accent-blue);
+  border-top-color: transparent;
+  animation: spinnerPulse 0.9s ease-in-out infinite;
 }
 
 .query-full-dataset-btn {
