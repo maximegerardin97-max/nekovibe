@@ -170,6 +170,10 @@ body {
   animation: bubbleSlideIn 0.3s ease;
 }
 
+.chat-bubble div {
+  white-space: pre-wrap;
+}
+
 .chat-bubble--enter {
   animation: bubbleSlideIn 0.3s ease;
 }
