@@ -118,11 +118,15 @@ function renderBubbleContent(bubble, message) {
     const buttonContainer = document.createElement("div");
     buttonContainer.className = "button-container";
     
-    const perplexityButton = document.createElement("button");
-    perplexityButton.className = "query-perplexity-btn";
-    perplexityButton.innerText = "Run another Perplexity query";
-    perplexityButton.onclick = () => queryPerplexity(message.prompt, bubble);
-    buttonContainer.appendChild(perplexityButton);
+    // Only show Perplexity button if "articles" source is selected
+    const hasArticlesSource = message.sources && message.sources.includes("articles");
+    if (hasArticlesSource) {
+      const perplexityButton = document.createElement("button");
+      perplexityButton.className = "query-perplexity-btn";
+      perplexityButton.innerText = "Run another Perplexity query";
+      perplexityButton.onclick = () => queryPerplexity(message.prompt, bubble);
+      buttonContainer.appendChild(perplexityButton);
+    }
     
     const datasetButton = document.createElement("button");
     datasetButton.className = "query-full-dataset-btn";
