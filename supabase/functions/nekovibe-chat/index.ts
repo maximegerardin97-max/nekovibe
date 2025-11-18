@@ -343,6 +343,33 @@ async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
   return insights;
 }
 
+function filterRelevantInsights(insights: any[], keywords: string[]): string {
+  if (insights.length === 0 || keywords.length === 0) {
+    return insights
+      .map((p) => `${p.label}\n${p.response_text}\n\nCitations: ${JSON.stringify(p.citations || [])}`)
+      .join("\n\n---\n\n");
+  }
+
+  // Filter insights based on keywords
+  const filtered = insights.map((insight) => {
+    const text = insight.response_text?.toLowerCase() || "";
+    const hasRelevantKeywords = keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+    
+    if (hasRelevantKeywords) {
+      // Highlight relevant sections
+      return {
+        ...insight,
+        label: `${insight.label} [RELEVANT TO QUESTION]`,
+      };
+    }
+    return insight;
+  });
+
+  return filtered
+    .map((p) => `${p.label}\n${p.response_text}\n\nCitations: ${JSON.stringify(p.citations || [])}`)
+    .join("\n\n---\n\n");
+}
+
 async function generateAnswer(
   prompt: string,
   summaries: any[],
@@ -351,6 +378,8 @@ async function generateAnswer(
   perplexityInsights: any[] = [],
   articlesOnly: boolean = false,
 ): Promise<string | null> {
+  // Extract keywords from prompt for relevance filtering
+  const questionKeywords = extractKeywords(prompt);
   // Build context blocks
   const summariesBlock = summaries
     .map((s) => `${s.label}\n${s.summary_text}`)
@@ -377,7 +406,21 @@ async function generateAnswer(
     })
     .join("\n\n");
 
-  const systemMessage = `You are Nekovibe, an expert analyst summarizing what people say about Neko Health based on reviews, articles, and social posts.
+  // Build system message based on whether it's articles-only
+  const systemMessage = articlesOnly
+    ? `You are Nekovibe, an expert analyst specializing in market intelligence and media analysis for Neko Health.
+
+CRITICAL RULES:
+- Answer the user's SPECIFIC question directly and precisely
+- Extract ONLY the relevant information from the web search insights that directly relates to the question
+- Do NOT provide generic summaries - focus on what the question is asking
+- If the question asks about recent news, prioritize the "Latest 7 Days" insights
+- If the question asks about overall market position, use the "Comprehensive" insights
+- If the question is about a specific topic (e.g., "partnerships", "expansion", "technology"), extract only that relevant information
+- Be specific, quantitative, and cite sources when possible
+- If the insights don't contain information relevant to the question, say so explicitly
+- Do NOT repeat the same generic answer - tailor your response to the specific question asked`
+    : `You are Nekovibe, an expert analyst summarizing what people say about Neko Health based on reviews, articles, and social posts.
 
 CRITICAL RULES:
 - Only use the provided summaries and snippets as ground truth
@@ -394,18 +437,24 @@ CRITICAL RULES:
   
   if (articlesOnly) {
     // Articles-only: ONLY use web search insights
+    // Extract relevant parts based on the question
+    const relevantInsights = filterRelevantInsights(perplexityInsights, questionKeywords);
+    
     userMessage = `Question: "${prompt}"
 
 Context - Web Search Market Intelligence (comprehensive web analysis):
-${perplexityBlock || "No web search insights available."}
+${relevantInsights || perplexityBlock || "No web search insights available."}
 
 IMPORTANT INSTRUCTIONS:
-- Answer this question based ONLY on the web search insights provided above
+- Answer the SPECIFIC question: "${prompt}"
+- Extract ONLY the information from the insights above that directly answers this question
+- Do NOT provide a generic summary - focus on what the question is asking
+- If the question asks about recent events/news, prioritize information from "Latest 7 Days" insights
+- If the question asks about overall market position/trends, use "Comprehensive" insights
+- If the question mentions specific topics (e.g., partnerships, expansion, technology), extract only that relevant information
 - Do NOT reference reviews, customer feedback, or any other sources
-- Focus exclusively on news articles, press coverage, media mentions, and public discussions about Neko Health
-- Be specific and quantitative when possible
-- Cite sources when relevant
-- If there's insufficient data in the web search insights, say so explicitly`;
+- Be specific, quantitative, and cite sources when relevant
+- If the insights don't contain information relevant to this specific question, say so explicitly`;
   } else {
     // Mixed or reviews-only: use all sources
     userMessage = `Question: "${prompt}"
@@ -428,13 +477,14 @@ Instructions:
 - If there's insufficient data, say so explicitly`;
   }
 
-  return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage);
+  return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
 }
 
 async function generateAnswerWithOpenAI(
   prompt: string,
   systemMessage: string,
   userMessage: string,
+  articlesOnly: boolean = false,
 ): Promise<string | null> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
@@ -444,7 +494,7 @@ async function generateAnswerWithOpenAI(
     },
     body: JSON.stringify({
       model: openaiModel,
-      temperature: 0.3,
+      temperature: articlesOnly ? 0.5 : 0.3, // Higher temperature for articles-only to get more varied answers
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: userMessage },
