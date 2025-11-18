@@ -105,3 +105,20 @@ npm run generate:summaries
 - **Missing data**: Check that ingestion scripts have run (`npm run fetch:all`)
 - **Frontend not connecting**: Verify API keys in `index.html` match your Supabase project
 
+## Automated Daily Refresh
+
+A GitHub Actions workflow (`.github/workflows/daily-refresh.yml`) keeps `feedback_items` and `feedback_summaries` up to date.
+
+1. In your repository settings → **Secrets and variables → Actions**, add:
+   - `SUPABASE_URL`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+   - `GOOGLE_PLACES_API_KEY`
+   - `GOOGLE_PLACES_IDS` (comma-separated list, same format as `.env`)
+2. The workflow runs every day at 00:00 UTC (and can be triggered manually via the **Run workflow** button).
+3. Steps performed:
+   - Install dependencies
+   - Run `scripts/fetch-google-reviews.ts` (ingests latest reviews into `google_reviews` + `feedback_items`)
+   - Run `scripts/generate-summaries.ts` (refreshes all feedback summaries)
+
+Adjust the cron expression in the workflow if you need a different schedule.
+
