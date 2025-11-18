@@ -118,15 +118,15 @@ function renderBubbleContent(bubble, message) {
     const buttonContainer = document.createElement("div");
     buttonContainer.className = "button-container";
     
-    // Only show Perplexity button if "articles" source is selected
-    const hasArticlesSource = message.sources && message.sources.includes("articles");
-    if (hasArticlesSource) {
-      const perplexityButton = document.createElement("button");
-      perplexityButton.className = "query-perplexity-btn";
-      perplexityButton.innerText = "Run another Perplexity query";
-      perplexityButton.onclick = () => queryPerplexity(message.prompt, bubble);
-      buttonContainer.appendChild(perplexityButton);
-    }
+            // Only show Tavily button if "articles" source is selected
+            const hasArticlesSource = message.sources && message.sources.includes("articles");
+            if (hasArticlesSource) {
+              const tavilyButton = document.createElement("button");
+              tavilyButton.className = "query-perplexity-btn";
+              tavilyButton.innerText = "Run another web search";
+              tavilyButton.onclick = () => queryTavily(message.prompt, bubble);
+              buttonContainer.appendChild(tavilyButton);
+            }
     
     const datasetButton = document.createElement("button");
     datasetButton.className = "query-full-dataset-btn";
@@ -143,18 +143,18 @@ function renderBubbleContent(bubble, message) {
   bubble.appendChild(content);
 }
 
-async function queryPerplexity(prompt, bubbleElement) {
+async function queryTavily(prompt, bubbleElement) {
   // Find and disable button
   const button = bubbleElement.querySelector(".query-perplexity-btn");
   if (button) {
     button.disabled = true;
-    button.innerText = "Querying Perplexity...";
+    button.innerText = "Searching web...";
   }
   
   // Add loading message
   const loadingId = appendMessage({ 
     role: "assistant", 
-    content: "Searching the web with Perplexity... This may take 10-20 seconds." 
+    content: "Searching the web for latest news and articles... This may take 10-20 seconds." 
   }, true);
   
   try {
@@ -164,10 +164,10 @@ async function queryPerplexity(prompt, bubbleElement) {
       headers.Authorization = `Bearer ${functionKey}`;
     }
     
-    // Construct Perplexity function URL (same base as chat function)
-    const perplexityUrl = functionUrl.replace('/nekovibe-chat', '/perplexity-query');
+    // Construct Tavily function URL (same base as chat function)
+    const tavilyUrl = functionUrl.replace('/nekovibe-chat', '/tavily-query');
     
-    const response = await fetch(perplexityUrl, {
+    const response = await fetch(tavilyUrl, {
       method: "POST",
       headers,
       body: JSON.stringify({ prompt }),
@@ -188,16 +188,16 @@ async function queryPerplexity(prompt, bubbleElement) {
       button.remove();
     }
   } catch (error) {
-    console.error("perplexity query error", error);
+    console.error("tavily query error", error);
     replaceMessage(loadingId, {
       role: "assistant",
-      content: "Couldn't query Perplexity. Please try again.",
+      content: "Couldn't search the web. Please try again.",
     });
     
     // Re-enable button
     if (button) {
       button.disabled = false;
-      button.innerText = "Run another Perplexity query";
+      button.innerText = "Run another web search";
     }
   }
 }

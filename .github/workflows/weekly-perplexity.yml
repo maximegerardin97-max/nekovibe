@@ -1,4 +1,4 @@
-name: Weekly Perplexity Comprehensive Check
+name: Weekly Tavily Comprehensive Check
 
 on:
   schedule:
@@ -11,7 +11,7 @@ jobs:
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-      PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+      TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -24,6 +24,6 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Fetch Perplexity comprehensive insights
-        run: npm run fetch:perplexity:comprehensive
+      - name: Fetch Tavily comprehensive insights
+        run: npm run fetch:tavily:comprehensive
 

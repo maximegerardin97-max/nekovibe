@@ -13,7 +13,9 @@
     "clean:reviews": "ts-node scripts/cleanup-unknown-clinic-reviews.ts",
     "generate:summaries": "ts-node scripts/generate-summaries.ts",
     "fetch:perplexity:comprehensive": "ts-node scripts/fetch-perplexity-insights.ts comprehensive",
-    "fetch:perplexity:recent": "ts-node scripts/fetch-perplexity-insights.ts last_7_days"
+    "fetch:perplexity:recent": "ts-node scripts/fetch-perplexity-insights.ts last_7_days",
+    "fetch:tavily:comprehensive": "ts-node scripts/fetch-tavily-insights.ts comprehensive",
+    "fetch:tavily:recent": "ts-node scripts/fetch-tavily-insights.ts last_7_days"
   },
   "keywords": [
     "brand-intelligence",
