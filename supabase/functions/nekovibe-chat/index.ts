@@ -66,8 +66,9 @@ serve(async (req) => {
     // Step 1: Fetch relevant summaries
     const summaries = await fetchSummaries(supabase, detectedClinics, detectedSourceType);
 
-    // Step 1.5: Fetch Perplexity insights (comprehensive + recent)
-    const perplexityInsights = await fetchPerplexityInsights(supabase);
+    // Step 1.5: Fetch Perplexity insights ONLY if articles/press source is selected
+    const hasArticlesSource = sources.includes("articles");
+    const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
 
     // Step 2: Perform targeted text search on feedback_items
     const searchResults = await searchFeedbackItems(
@@ -77,7 +78,7 @@ serve(async (req) => {
       detectedSourceType,
     );
 
-    // Step 3: Build single LLM prompt with summaries + snippets + Perplexity insights
+    // Step 3: Build single LLM prompt with summaries + snippets + Perplexity insights (if articles selected)
     const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights);
 
     return respond(
