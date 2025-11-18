@@ -209,12 +209,20 @@ body {
   animation: spinnerPulse 0.9s ease-in-out infinite;
 }
 
+.button-container {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.query-perplexity-btn,
 .query-full-dataset-btn {
   align-self: flex-start;
   padding: 0.5rem 1rem;
-  border: 1px solid var(--accent-blue);
+  border: 1px solid var(--accent-teal);
   background: transparent;
-  color: var(--accent-blue);
+  color: var(--accent-teal);
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 500;
@@ -223,14 +231,26 @@ body {
   font-family: inherit;
 }
 
+.query-perplexity-btn:hover:not(:disabled),
 .query-full-dataset-btn:hover:not(:disabled) {
-  background: var(--accent-blue);
+  background: var(--accent-teal);
   color: #fff;
 }
 
+.query-perplexity-btn:disabled,
 .query-full-dataset-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+.query-full-dataset-btn {
+  border-color: var(--accent-blue);
+  color: var(--accent-blue);
+}
+
+.query-full-dataset-btn:hover:not(:disabled) {
+  background: var(--accent-blue);
+  color: #fff;
 }
 
 .empty-state {

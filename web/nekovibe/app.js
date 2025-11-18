@@ -115,17 +115,87 @@ function renderBubbleContent(bubble, message) {
     contentDiv.textContent = message.content;
     bubble.appendChild(contentDiv);
     
-    const button = document.createElement("button");
-    button.className = "query-full-dataset-btn";
-    button.innerText = "Query full dataset";
-    button.onclick = () => queryFullDataset(message.prompt, message.sources, bubble);
-    bubble.appendChild(button);
+    const buttonContainer = document.createElement("div");
+    buttonContainer.className = "button-container";
+    
+    const perplexityButton = document.createElement("button");
+    perplexityButton.className = "query-perplexity-btn";
+    perplexityButton.innerText = "Run another Perplexity query";
+    perplexityButton.onclick = () => queryPerplexity(message.prompt, bubble);
+    buttonContainer.appendChild(perplexityButton);
+    
+    const datasetButton = document.createElement("button");
+    datasetButton.className = "query-full-dataset-btn";
+    datasetButton.innerText = "Query full dataset";
+    datasetButton.onclick = () => queryFullDataset(message.prompt, message.sources, bubble);
+    buttonContainer.appendChild(datasetButton);
+    
+    bubble.appendChild(buttonContainer);
     return;
   }
   
   const content = document.createElement("div");
   content.textContent = message.content;
   bubble.appendChild(content);
+}
+
+async function queryPerplexity(prompt, bubbleElement) {
+  // Find and disable button
+  const button = bubbleElement.querySelector(".query-perplexity-btn");
+  if (button) {
+    button.disabled = true;
+    button.innerText = "Querying Perplexity...";
+  }
+  
+  // Add loading message
+  const loadingId = appendMessage({ 
+    role: "assistant", 
+    content: "Searching the web with Perplexity... This may take 10-20 seconds." 
+  }, true);
+  
+  try {
+    const headers = { "Content-Type": "application/json" };
+    if (functionKey) {
+      headers.apikey = functionKey;
+      headers.Authorization = `Bearer ${functionKey}`;
+    }
+    
+    // Construct Perplexity function URL (same base as chat function)
+    const perplexityUrl = functionUrl.replace('/nekovibe-chat', '/perplexity-query');
+    
+    const response = await fetch(perplexityUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    
+    const data = await response.json();
+    replaceMessage(loadingId, { 
+      role: "assistant", 
+      content: data.answer ?? "No answer returned." 
+    });
+    
+    // Remove button from original message
+    if (button) {
+      button.remove();
+    }
+  } catch (error) {
+    console.error("perplexity query error", error);
+    replaceMessage(loadingId, {
+      role: "assistant",
+      content: "Couldn't query Perplexity. Please try again.",
+    });
+    
+    // Re-enable button
+    if (button) {
+      button.disabled = false;
+      button.innerText = "Run another Perplexity query";
+    }
+  }
 }
 
 async function queryFullDataset(prompt, sources, bubbleElement) {
