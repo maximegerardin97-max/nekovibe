@@ -288,13 +288,13 @@ async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
   const insights: any[] = [];
 
   // Fetch both comprehensive and recent insights
-  const { data: comprehensive } = await supabase
+  const { data: comprehensive, error: comprehensiveError } = await supabase
     .from("perplexity_insights")
     .select("*")
     .eq("scope", "comprehensive")
     .single();
 
-  if (comprehensive) {
+  if (comprehensive && !comprehensiveError) {
     insights.push({
       label: "[Perplexity: Comprehensive Market Analysis]",
       scope: "comprehensive",
@@ -302,17 +302,27 @@ async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
     });
   }
 
-  const { data: recent } = await supabase
+  const { data: recent, error: recentError } = await supabase
     .from("perplexity_insights")
     .select("*")
     .eq("scope", "last_7_days")
     .single();
 
-  if (recent) {
+  if (recent && !recentError) {
     insights.push({
       label: "[Perplexity: Latest 7 Days News & Trends]",
       scope: "last_7_days",
       ...recent,
+    });
+  }
+
+  // If no insights available, return placeholder
+  if (insights.length === 0) {
+    insights.push({
+      label: "[Perplexity: Market Intelligence]",
+      scope: "unavailable",
+      response_text: "Perplexity insights are currently unavailable. The system is configured to fetch comprehensive market analysis and recent news trends, but data collection is pending. Once available, this will include web-wide analysis of Neko Health mentions, sentiment, and trends.",
+      citations: [],
     });
   }
 

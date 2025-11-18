@@ -9,9 +9,11 @@ const corsHeaders = {
 const perplexityApiKey = Deno.env.get("PERPLEXITY_API_KEY") ?? "";
 const perplexityApiUrl = "https://api.perplexity.ai/chat/completions";
 
-if (!perplexityApiKey) {
-  console.warn("PERPLEXITY_API_KEY not set.");
-}
+const PERPLEXITY_UNAVAILABLE_MESSAGE = `Perplexity API is currently unavailable. 
+
+This feature allows you to search the web in real-time for the latest news, articles, and discussions about Neko Health. Once the Perplexity API is configured, you'll be able to get fresh insights from across the internet.
+
+For now, please use the "Query full dataset" button to get comprehensive answers from our stored reviews and summaries.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -22,6 +24,16 @@ serve(async (req) => {
     const { prompt } = await req.json();
     if (!prompt || typeof prompt !== "string") {
       return respond({ error: "prompt is required" }, 400);
+    }
+
+    // Check if Perplexity API is available
+    if (!perplexityApiKey) {
+      console.warn("PERPLEXITY_API_KEY not set - returning placeholder");
+      return respond({
+        answer: PERPLEXITY_UNAVAILABLE_MESSAGE,
+        citations: [],
+        unavailable: true,
+      }, 200);
     }
 
     // Build context-aware query for Perplexity
@@ -72,10 +84,12 @@ Cite all sources. Be specific and quantitative when possible.`;
     if (!response.ok) {
       const errorText = await response.text();
       console.error("Perplexity API error:", response.status, errorText);
-      return respond(
-        { error: "Failed to query Perplexity", details: errorText },
-        response.status,
-      );
+      // Return placeholder instead of error
+      return respond({
+        answer: PERPLEXITY_UNAVAILABLE_MESSAGE,
+        citations: [],
+        unavailable: true,
+      }, 200);
     }
 
     const data = await response.json();
