@@ -63,23 +63,36 @@ serve(async (req) => {
       );
     }
 
-    // Step 1: Fetch relevant summaries
-    const summaries = await fetchSummaries(supabase, detectedClinics, detectedSourceType);
-
-    // Step 1.5: Fetch Tavily/Web insights ONLY if articles/press source is selected
+    // Check if ONLY articles/press is selected
     const hasArticlesSource = sources.includes("articles");
-    const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
+    const hasReviewsSource = sources.includes("reviews");
+    const onlyArticles = hasArticlesSource && !hasReviewsSource;
 
-    // Step 2: Perform targeted text search on feedback_items
-    const searchResults = await searchFeedbackItems(
+    // Step 1: Fetch relevant summaries (ONLY if not articles-only)
+    const summaries = onlyArticles ? [] : await fetchSummaries(supabase, detectedClinics, detectedSourceType);
+
+    // Step 1.5: Fetch Tavily/Web insights (ALWAYS if articles selected, REQUIRED if articles-only)
+    const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
+    
+    // If articles-only and no insights available, return early
+    if (onlyArticles && perplexityInsights.length === 0) {
+      return respond({
+        answer: "No web search insights are currently available. The system is configured to fetch comprehensive market analysis and recent news trends, but data collection is pending. Please try again later or use the 'Run another web search' button for a real-time search.",
+        usedSources: ["articles"],
+      }, 200);
+    }
+
+    // Step 2: Perform targeted text search on feedback_items (ONLY if not articles-only)
+    const searchResults = onlyArticles ? [] : await searchFeedbackItems(
       supabase,
       prompt,
       detectedClinics,
       detectedSourceType,
     );
 
-    // Step 3: Build single LLM prompt with summaries + snippets + Tavily/Web insights (if articles selected)
-    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights);
+    // Step 3: Build single LLM prompt with summaries + snippets + Tavily/Web insights
+    // If articles-only, only use Tavily insights
+    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights, onlyArticles);
 
     return respond(
       {
@@ -336,6 +349,7 @@ async function generateAnswer(
   searchResults: any[],
   clinics: string[],
   perplexityInsights: any[] = [],
+  articlesOnly: boolean = false,
 ): Promise<string | null> {
   // Build context blocks
   const summariesBlock = summaries
@@ -375,7 +389,26 @@ CRITICAL RULES:
 - NEVER make medical claims; you are only reflecting user feedback and public mentions
 - Be honest and balanced - mention both positive and negative feedback when present`;
 
-  const userMessage = `Question: "${prompt}"
+  // Build prompt based on whether it's articles-only or mixed
+  let userMessage: string;
+  
+  if (articlesOnly) {
+    // Articles-only: ONLY use web search insights
+    userMessage = `Question: "${prompt}"
+
+Context - Web Search Market Intelligence (comprehensive web analysis):
+${perplexityBlock || "No web search insights available."}
+
+IMPORTANT INSTRUCTIONS:
+- Answer this question based ONLY on the web search insights provided above
+- Do NOT reference reviews, customer feedback, or any other sources
+- Focus exclusively on news articles, press coverage, media mentions, and public discussions about Neko Health
+- Be specific and quantitative when possible
+- Cite sources when relevant
+- If there's insufficient data in the web search insights, say so explicitly`;
+  } else {
+    // Mixed or reviews-only: use all sources
+    userMessage = `Question: "${prompt}"
 
 Context - Summaries (overall patterns):
 ${summariesBlock || "No summaries available."}
@@ -393,6 +426,7 @@ Instructions:
 - If the question targets specific clinics (${clinics.length ? clinics.join(", ") : "all clinics"}), prioritize those clinics
 - Be specific and quantitative when possible
 - If there's insufficient data, say so explicitly`;
+  }
 
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage);
 }

@@ -107,16 +107,16 @@ export class FetchTavilyInsightsJob {
 
   private buildQuery(scope: 'comprehensive' | 'last_7_days'): string {
     if (scope === 'comprehensive') {
-      return 'Neko Health health check clinics: overall public perception, customer reviews, media coverage, market positioning, competitive analysis, key differentiators, strengths, weaknesses, controversies, trends';
+      return 'Neko Health health check clinics: overall public perception, customer reviews, media coverage, market positioning, competitive analysis, key differentiators, strengths, weaknesses, controversies, trends, investor news, partnerships, expansion plans, technology innovations, healthcare industry analysis';
     } else {
-      return 'Neko Health latest news articles press releases blog posts social media mentions past 7 days';
+      return 'Neko Health latest news articles press releases blog posts social media mentions Twitter LinkedIn Reddit past 7 days: what happened this week, new announcements, press coverage, media mentions, social media discussions, industry news, partnerships, events, controversies, customer feedback in media, reviews in press, expansion news, technology updates, investor activity';
     }
   }
 
   private async callTavilyAPI(query: string, scope: 'comprehensive' | 'last_7_days'): Promise<TavilyResponse | null> {
     try {
-      const searchDepth = scope === 'comprehensive' ? 'advanced' : 'basic';
-      const maxResults = scope === 'comprehensive' ? 20 : 15;
+      const searchDepth = 'advanced'; // Use advanced for both to get more comprehensive results
+      const maxResults = scope === 'comprehensive' ? 30 : 25; // Increased for more detail
       const days = scope === 'last_7_days' ? 7 : undefined;
 
       const response = await fetch(this.apiUrl, {
@@ -130,7 +130,7 @@ export class FetchTavilyInsightsJob {
           search_depth: searchDepth,
           include_answer: true,
           include_images: false,
-          include_raw_content: false,
+          include_raw_content: true, // Include raw content for more detailed summaries
           max_results: maxResults,
           days,
         }),
@@ -164,18 +164,31 @@ export class FetchTavilyInsightsJob {
 
   private formatResults(response: TavilyResponse): string {
     if (response.answer) {
+      // Enhance the answer with more context from results
+      const results = response.results || [];
+      if (results.length > 0) {
+        const sourcesList = results
+          .slice(0, 10)
+          .map((r, idx) => `[${idx + 1}] ${r.title} (${r.url})`)
+          .join('\n');
+        return `${response.answer}\n\nSources:\n${sourcesList}`;
+      }
       return response.answer;
     }
 
-    // Fallback: format results manually
+    // Fallback: format results manually with more detail
     const results = response.results || [];
     if (results.length === 0) {
       return 'No results found.';
     }
 
     const summary = results
-      .slice(0, 10)
-      .map((r, idx) => `[${idx + 1}] ${r.title}\n${r.url}\n${r.content.substring(0, 200)}...`)
+      .slice(0, 15)
+      .map((r, idx) => {
+        const date = r.published_date ? ` | Published: ${r.published_date}` : '';
+        const content = r.content ? r.content.substring(0, 400) : 'No content available';
+        return `[${idx + 1}] ${r.title}${date}\n${r.url}\n${content}...`;
+      })
       .join('\n\n');
 
     return `Found ${results.length} relevant sources:\n\n${summary}`;
