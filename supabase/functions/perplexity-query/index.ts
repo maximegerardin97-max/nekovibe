@@ -36,6 +36,9 @@ serve(async (req) => {
       }, 200);
     }
 
+    // Log API key status (first 10 chars only for security)
+    console.log("Perplexity API key present:", perplexityApiKey ? `${perplexityApiKey.substring(0, 10)}...` : "MISSING");
+
     // Build context-aware query for Perplexity
     const contextualPrompt = `You are researching Neko Health, a health check clinic company. 
 
@@ -61,7 +64,7 @@ Cite all sources. Be specific and quantitative when possible.`;
     const response = await fetch(perplexityApiUrl, {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${perplexityApiKey}`,
+        "Authorization": `Bearer ${perplexityApiKey.trim()}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
