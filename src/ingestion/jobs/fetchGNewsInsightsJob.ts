@@ -64,19 +64,26 @@ export class FetchGNewsInsightsJob {
     console.log(`📊 Max articles: ${maxArticles}`);
 
     try {
-      const articles = await this.callGNewsAPI(query, maxArticles, days);
+      // Try multiple query strategies to find accessible articles
+      let articles = await this.callGNewsAPI(query, maxArticles, days);
+      
+      // If no results, try a fallback query without date restrictions
+      if ((!articles || articles.length === 0) && days) {
+        console.log('⚠️  No articles with date filter, trying without date restriction...');
+        articles = await this.callGNewsAPI(query, maxArticles, undefined);
+      }
+      
       if (!articles || articles.length === 0) {
         console.warn('⚠️  No articles found from GNews - storing placeholder');
         
         // Store a placeholder so the system knows GNews was checked
         const placeholderSummary = `GNews search for "Neko Health" returned no accessible articles. 
 
-Note: GNews free plan has limitations:
-- Real-time articles (less than 12 hours old) are delayed on free plans
-- Historical articles (beyond 30 days) require a paid plan
-- Articles may be filtered out due to these restrictions
+Note: GNews free plan only allows articles that are 12 hours to 30 days old. Articles about Neko Health may be:
+- Too recent (less than 12 hours old) - free plan has delay
+- Too old (more than 30 days old) - free plan doesn't allow historical data
 
-GNews will continue to be checked daily/weekly. Consider upgrading to a paid GNews plan for full access to real-time and historical news articles.`;
+GNews will continue to be checked daily/weekly. When articles fall within the 12h-30d window, they will automatically appear. Consider upgrading to a paid GNews plan for full access to real-time and historical news articles.`;
         
         const supabase = createClient(this.supabaseUrl, this.supabaseKey);
         const { error } = await supabase
@@ -148,11 +155,14 @@ GNews will continue to be checked daily/weekly. Consider upgrading to a paid GNe
   }
 
   private buildQuery(scope: 'comprehensive' | 'last_7_days'): string {
-    // Use broader queries to catch more articles
+    // GNews free plan only allows articles 12h-30d old
+    // Use broader queries that might catch articles in that window
     if (scope === 'comprehensive') {
-      return 'Neko Health OR "Neko Health" health check clinic preventive healthcare';
+      // Try multiple search strategies to find accessible articles
+      return '"Neko Health" OR (health check clinic AND preventive healthcare)';
     } else {
-      return 'Neko Health OR "Neko Health"';
+      // For recent, try exact match first
+      return '"Neko Health"';
     }
   }
 
@@ -166,10 +176,14 @@ GNews will continue to be checked daily/weekly. Consider upgrading to a paid GNe
         sortby: 'publishedAt',
       });
 
-      if (days) {
-        // GNews uses 'in' parameter for date range: "7d" for last 7 days
+      // Free plan limitation: can only access articles 12 hours to 30 days old
+      // For 7-day search, use 'in' parameter but it may still filter
+      // For comprehensive, don't use date filter to get articles in the allowed window
+      if (days && days <= 30) {
+        // Only use date filter for recent searches (within 30 days)
         params.append('in', `${days}d`);
       }
+      // For comprehensive, no date filter = gets articles in the 12h-30d window
 
       const url = `${this.apiUrl}/search?${params.toString()}`;
       console.log(`📡 Calling GNews API: ${url.replace(this.apiKey, '***')}`);
