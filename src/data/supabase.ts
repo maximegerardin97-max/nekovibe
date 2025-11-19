@@ -6,17 +6,25 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
 import { GoogleReview, Article } from '../types';
 
+// Load .env file if it exists (for local development)
+// In GitHub Actions, environment variables come from workflow secrets
 dotenv.config();
 
-if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceRoleKey) {
   throw new Error(
-    'Missing Supabase configuration. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env'
+    `Missing Supabase configuration. Please set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY.
+    In GitHub Actions: Set them as repository secrets.
+    Locally: Set them in .env file.
+    Current values: SUPABASE_URL=${supabaseUrl ? 'SET' : 'MISSING'}, SUPABASE_SERVICE_ROLE_KEY=${supabaseServiceRoleKey ? 'SET' : 'MISSING'}`
   );
 }
 
 export const supabase: SupabaseClient = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
+  supabaseUrl,
+  supabaseServiceRoleKey
 );
 
 /**
