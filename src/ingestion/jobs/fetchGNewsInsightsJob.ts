@@ -64,8 +64,43 @@ export class FetchGNewsInsightsJob {
     try {
       const articles = await this.callGNewsAPI(query, maxArticles, days);
       if (!articles || articles.length === 0) {
-        console.warn('⚠️  No articles found from GNews');
-        return { stored: false, error: 'No articles found' };
+        console.warn('⚠️  No articles found from GNews - storing placeholder');
+        
+        // Store a placeholder so the system knows GNews was checked
+        const placeholderSummary = `GNews search for "Neko Health" returned no articles. This could mean:
+- No recent news coverage about Neko Health in GNews's database
+- The company may have limited media coverage
+- Articles may be indexed under different search terms
+
+GNews will continue to be checked daily/weekly for new articles.`;
+        
+        const supabase = createClient(this.supabaseUrl, this.supabaseKey);
+        const { error } = await supabase
+          .from('perplexity_insights')
+          .upsert({
+            scope: `gnews_${scope}`,
+            query_text: query,
+            response_text: placeholderSummary,
+            citations: [],
+            metadata: {
+              provider: 'gnews',
+              total_articles: 0,
+              articles_processed: 0,
+              no_results: true,
+            },
+            last_refreshed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'scope',
+          });
+
+        if (error) {
+          console.error('❌ Error storing placeholder:', error);
+          return { stored: false, error: error.message };
+        }
+
+        console.log(`✅ Stored GNews ${scope} placeholder (no articles found)`);
+        return { stored: true };
       }
 
       console.log(`📚 Found ${articles.length} articles`);
@@ -109,10 +144,11 @@ export class FetchGNewsInsightsJob {
   }
 
   private buildQuery(scope: 'comprehensive' | 'last_7_days'): string {
+    // Use broader queries to catch more articles
     if (scope === 'comprehensive') {
-      return 'Neko Health health check clinic';
+      return 'Neko Health OR "Neko Health" health check clinic preventive healthcare';
     } else {
-      return 'Neko Health';
+      return 'Neko Health OR "Neko Health"';
     }
   }
 
@@ -143,7 +179,16 @@ export class FetchGNewsInsightsJob {
       }
 
       const data: GNewsResponse = await response.json();
-      return data.articles || [];
+      
+      // Log response for debugging
+      console.log(`📊 GNews API response: ${data.totalArticles || 0} total articles found`);
+      
+      if (!data.articles || data.articles.length === 0) {
+        console.warn('⚠️  GNews returned empty articles array');
+        return [];
+      }
+      
+      return data.articles;
     } catch (error) {
       console.error('Error calling GNews API:', error);
       return [];
