@@ -430,7 +430,15 @@ CRITICAL RULES:
 - If the question is very specific and there is little or no data, say that explicitly
 - If the question targets one clinic, focus on that clinic first, then compare to others only if clearly present in data
 - NEVER make medical claims; you are only reflecting user feedback and public mentions
-- Be honest and balanced - mention both positive and negative feedback when present`;
+- Be honest and balanced - mention both positive and negative feedback when present
+
+QUANTITATIVE REPORTING REQUIREMENT:
+- When mentioning negative feedback, complaints, or specific issues, ALWAYS provide quantitative context
+- Format: "X out of Y reviews mentioned [issue]" or "X reviews (Y% of total) reported [issue]"
+- When citing specific problems, always state how many reviews mentioned it
+- Example: Instead of "Some users complained about wait times", say "15 out of 200 reviews (7.5%) mentioned long wait times"
+- If exact counts aren't available in summaries, estimate based on patterns or say "a small number" / "several" / "many" with context
+- Always provide the total review count when discussing percentages or proportions`;
 
   // Build prompt based on whether it's articles-only or mixed
   let userMessage: string;
@@ -474,7 +482,14 @@ Instructions:
 - Use snippets as concrete examples (you can quote/paraphrase)
 - If the question targets specific clinics (${clinics.length ? clinics.join(", ") : "all clinics"}), prioritize those clinics
 - Be specific and quantitative when possible
-- If there's insufficient data, say so explicitly`;
+- If there's insufficient data, say so explicitly
+
+QUANTITATIVE REQUIREMENT FOR NEGATIVE FEEDBACK:
+- When mentioning complaints, issues, or negative points, ALWAYS provide numbers
+- Format: "X out of Y reviews mentioned [issue]" or "X reviews (Y% of total) reported [issue]"
+- Example: "12 out of 200 reviews (6%) mentioned long wait times"
+- If exact numbers aren't in the data, estimate from patterns or provide context like "a small number of reviews" with the total count
+- Always include the total review count when discussing any negative feedback or specific issues`;
   }
 
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
