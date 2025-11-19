@@ -15,7 +15,9 @@
     "fetch:perplexity:comprehensive": "ts-node scripts/fetch-perplexity-insights.ts comprehensive",
     "fetch:perplexity:recent": "ts-node scripts/fetch-perplexity-insights.ts last_7_days",
     "fetch:tavily:comprehensive": "ts-node scripts/fetch-tavily-insights.ts comprehensive",
-    "fetch:tavily:recent": "ts-node scripts/fetch-tavily-insights.ts last_7_days"
+    "fetch:tavily:recent": "ts-node scripts/fetch-tavily-insights.ts last_7_days",
+    "fetch:gnews:comprehensive": "ts-node scripts/fetch-gnews-insights.ts comprehensive",
+    "fetch:gnews:recent": "ts-node scripts/fetch-gnews-insights.ts last_7_days"
   },
   "keywords": [
     "brand-intelligence",

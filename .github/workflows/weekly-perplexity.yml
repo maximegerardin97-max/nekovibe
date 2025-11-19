@@ -12,6 +12,7 @@ jobs:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -26,4 +27,7 @@ jobs:
 
       - name: Fetch Tavily comprehensive insights
         run: npm run fetch:tavily:comprehensive
+
+      - name: Fetch GNews comprehensive insights
+        run: npm run fetch:gnews:comprehensive
 

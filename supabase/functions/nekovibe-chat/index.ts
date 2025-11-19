@@ -301,32 +301,63 @@ function extractKeywords(prompt: string): string[] {
 async function fetchPerplexityInsights(supabase: any): Promise<any[]> {
   const insights: any[] = [];
 
-  // Fetch both comprehensive and recent insights
-  const { data: comprehensive, error: comprehensiveError } = await supabase
+  // Fetch Tavily comprehensive insights
+  const { data: tavilyComprehensive, error: tavilyComprehensiveError } = await supabase
     .from("perplexity_insights")
     .select("*")
     .eq("scope", "comprehensive")
     .single();
 
-  if (comprehensive && !comprehensiveError) {
+  if (tavilyComprehensive && !tavilyComprehensiveError) {
     insights.push({
-      label: "[Web Search: Comprehensive Market Analysis]",
+      label: "[Web Search (Tavily): Comprehensive Market Analysis]",
       scope: "comprehensive",
-      ...comprehensive,
+      ...tavilyComprehensive,
     });
   }
 
-  const { data: recent, error: recentError } = await supabase
+  // Fetch Tavily recent insights
+  const { data: tavilyRecent, error: tavilyRecentError } = await supabase
     .from("perplexity_insights")
     .select("*")
     .eq("scope", "last_7_days")
     .single();
 
-  if (recent && !recentError) {
+  if (tavilyRecent && !tavilyRecentError) {
     insights.push({
-      label: "[Web Search: Latest 7 Days News & Trends]",
+      label: "[Web Search (Tavily): Latest 7 Days News & Trends]",
       scope: "last_7_days",
-      ...recent,
+      ...tavilyRecent,
+    });
+  }
+
+  // Fetch GNews comprehensive insights
+  const { data: gnewsComprehensive, error: gnewsComprehensiveError } = await supabase
+    .from("perplexity_insights")
+    .select("*")
+    .eq("scope", "gnews_comprehensive")
+    .single();
+
+  if (gnewsComprehensive && !gnewsComprehensiveError) {
+    insights.push({
+      label: "[News Articles (GNews): Comprehensive News Coverage]",
+      scope: "gnews_comprehensive",
+      ...gnewsComprehensive,
+    });
+  }
+
+  // Fetch GNews recent insights
+  const { data: gnewsRecent, error: gnewsRecentError } = await supabase
+    .from("perplexity_insights")
+    .select("*")
+    .eq("scope", "gnews_last_7_days")
+    .single();
+
+  if (gnewsRecent && !gnewsRecentError) {
+    insights.push({
+      label: "[News Articles (GNews): Latest 7 Days News]",
+      scope: "gnews_last_7_days",
+      ...gnewsRecent,
     });
   }
 

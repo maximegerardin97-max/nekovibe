@@ -14,6 +14,7 @@ jobs:
       GOOGLE_PLACES_API_KEY: ${{ secrets.GOOGLE_PLACES_API_KEY }}
       GOOGLE_PLACES_IDS: ${{ secrets.GOOGLE_PLACES_IDS }}
       TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+      GNEWS_API_KEY: ${{ secrets.GNEWS_API_KEY }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,6 +32,9 @@ jobs:
 
       - name: Fetch Tavily recent insights (last 7 days)
         run: npm run fetch:tavily:recent
+
+      - name: Fetch GNews recent insights (last 7 days)
+        run: npm run fetch:gnews:recent
 
       - name: Generate/refresh summaries
         run: npx ts-node scripts/generate-summaries.ts

@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS perplexity_insights (
   id BIGSERIAL PRIMARY KEY,
-  scope TEXT NOT NULL CHECK (scope IN ('comprehensive', 'last_7_days')),
+  scope TEXT NOT NULL CHECK (scope IN ('comprehensive', 'last_7_days', 'gnews_comprehensive', 'gnews_last_7_days')),
   query_text TEXT NOT NULL,
   response_text TEXT NOT NULL,
   citations JSONB DEFAULT '[]', -- Array of {url, title, published_at}
