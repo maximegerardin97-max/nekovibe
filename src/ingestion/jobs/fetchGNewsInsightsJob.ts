@@ -23,8 +23,10 @@ interface GNewsArticle {
 }
 
 interface GNewsResponse {
-  totalArticles: number;
-  articles: GNewsArticle[];
+  totalArticles?: number;
+  articles?: GNewsArticle[];
+  // GNews might return data in different formats
+  [key: string]: any;
 }
 
 export class FetchGNewsInsightsJob {
@@ -67,12 +69,14 @@ export class FetchGNewsInsightsJob {
         console.warn('⚠️  No articles found from GNews - storing placeholder');
         
         // Store a placeholder so the system knows GNews was checked
-        const placeholderSummary = `GNews search for "Neko Health" returned no articles. This could mean:
-- No recent news coverage about Neko Health in GNews's database
-- The company may have limited media coverage
-- Articles may be indexed under different search terms
+        const placeholderSummary = `GNews search for "Neko Health" returned no accessible articles. 
 
-GNews will continue to be checked daily/weekly for new articles.`;
+Note: GNews free plan has limitations:
+- Real-time articles (less than 12 hours old) are delayed on free plans
+- Historical articles (beyond 30 days) require a paid plan
+- Articles may be filtered out due to these restrictions
+
+GNews will continue to be checked daily/weekly. Consider upgrading to a paid GNews plan for full access to real-time and historical news articles.`;
         
         const supabase = createClient(this.supabaseUrl, this.supabaseKey);
         const { error } = await supabase
@@ -178,17 +182,24 @@ GNews will continue to be checked daily/weekly for new articles.`;
         return [];
       }
 
-      const data: GNewsResponse = await response.json();
+      const data: any = await response.json();
       
       // Log response for debugging
-      console.log(`📊 GNews API response: ${data.totalArticles || 0} total articles found`);
+      console.log(`📊 GNews API response structure:`, JSON.stringify(Object.keys(data)).substring(0, 200));
+      console.log(`📊 Total articles: ${data.totalArticles || data.articles?.length || 0}`);
       
-      if (!data.articles || data.articles.length === 0) {
+      // Handle different response formats
+      const articles = data.articles || [];
+      
+      if (!articles || articles.length === 0) {
         console.warn('⚠️  GNews returned empty articles array');
+        // Log full response for debugging (first 500 chars)
+        console.log('📋 Full response sample:', JSON.stringify(data).substring(0, 500));
         return [];
       }
       
-      return data.articles;
+      console.log(`✅ Successfully parsed ${articles.length} articles`);
+      return articles;
     } catch (error) {
       console.error('Error calling GNews API:', error);
       return [];
