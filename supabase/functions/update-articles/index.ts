@@ -57,6 +57,38 @@ serve(async (req) => {
         const updates: any = {};
         let needsUpdate = false;
 
+        // Fix date if it's invalid or missing
+        if (article.published_at) {
+          const currentDate = new Date(article.published_at);
+          // Check if date is invalid or too old (before 2000) or in the future
+          const now = new Date();
+          const year2000 = new Date('2000-01-01');
+          
+          if (isNaN(currentDate.getTime()) || 
+              currentDate < year2000 || 
+              currentDate > now) {
+            // Try to parse from URL or other sources
+            const fixedDate = tryExtractDateFromUrl(article.url) || 
+                             tryExtractDateFromContent(article.content || article.description || "");
+            
+            if (fixedDate) {
+              updates.published_at = fixedDate.toISOString();
+              needsUpdate = true;
+              console.log(`  Fixed date for: ${article.title} -> ${fixedDate.toISOString()}`);
+            }
+          }
+        } else {
+          // No date at all, try to extract from URL or content
+          const extractedDate = tryExtractDateFromUrl(article.url) || 
+                               tryExtractDateFromContent(article.content || article.description || "");
+          
+          if (extractedDate) {
+            updates.published_at = extractedDate.toISOString();
+            needsUpdate = true;
+            console.log(`  Added date for: ${article.title} -> ${extractedDate.toISOString()}`);
+          }
+        }
+
         // Check if LinkedIn post needs categorization
         if (article.source === "linkedin") {
           const currentPostType = article.metadata?.post_type;
@@ -67,7 +99,7 @@ serve(async (req) => {
               article.content || article.description || ""
             );
             updates.metadata = {
-              ...(article.metadata || {}),
+              ...(updates.metadata || article.metadata || {}),
               post_type: postType,
             };
             needsUpdate = true;
@@ -134,6 +166,57 @@ serve(async (req) => {
     return respond({ error: "Unexpected error", details: `${error}` }, 500);
   }
 });
+
+function tryExtractDateFromUrl(url: string): Date | null {
+  // Try to extract date from URL patterns like /2024/01/15/ or /2024-01-15/
+  const datePatterns = [
+    /(\d{4})\/(\d{2})\/(\d{2})/, // YYYY/MM/DD
+    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
+  ];
+  
+  for (const pattern of datePatterns) {
+    const match = url.match(pattern);
+    if (match) {
+      try {
+        const date = new Date(match[0].replace(/\//g, '-'));
+        if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+          return date;
+        }
+      } catch {
+        // Continue
+      }
+    }
+  }
+  
+  return null;
+}
+
+function tryExtractDateFromContent(content: string): Date | null {
+  if (!content) return null;
+  
+  // Try to find date patterns in content
+  const datePatterns = [
+    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
+    /(\d{2})\/(\d{2})\/(\d{4})/, // MM/DD/YYYY
+    /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})/i,
+  ];
+  
+  for (const pattern of datePatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      try {
+        const date = new Date(match[0]);
+        if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+          return date;
+        }
+      } catch {
+        // Continue
+      }
+    }
+  }
+  
+  return null;
+}
 
 function categorizeLinkedInPost(url: string, author: string, content: string): 'company_post' | 'organic_post' {
   const urlLower = url.toLowerCase();
