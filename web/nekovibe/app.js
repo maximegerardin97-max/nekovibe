@@ -293,34 +293,33 @@ if (document.readyState === "loading") {
   }, 100);
 }
 
-// Tab switching
-const tabButtons = document.querySelectorAll(".tab-button");
-const tabContents = document.querySelectorAll(".tab-content");
+// View switching - button next to Social
+const viewAllReviewsBtn = document.getElementById("view-all-reviews-btn");
+const chatView = document.getElementById("chat-view");
+const reviewsView = document.getElementById("reviews-view");
 
-tabButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const targetTab = button.dataset.tab;
+let showingReviews = false;
+
+viewAllReviewsBtn?.addEventListener("click", () => {
+  showingReviews = !showingReviews;
+  
+  if (showingReviews) {
+    // Show reviews view
+    chatView.style.display = "none";
+    reviewsView.style.display = "block";
+    viewAllReviewsBtn.classList.add("active");
+    viewAllReviewsBtn.querySelector("span").textContent = "Back to Chat";
     
-    // Update button states
-    tabButtons.forEach((btn) => {
-      btn.classList.remove("active");
-      btn.setAttribute("aria-selected", "false");
-    });
-    button.classList.add("active");
-    button.setAttribute("aria-selected", "true");
-    
-    // Update content visibility
-    tabContents.forEach((content) => {
-      content.classList.remove("active");
-    });
-    document.getElementById(`${targetTab}-view`).classList.add("active");
-    
-    // Load reviews if switching to reviews tab
-    if (targetTab === "reviews") {
-      if (typeof loadClinics === "function") loadClinics();
-      if (typeof loadReviews === "function") loadReviews();
-    }
-  });
+    // Load reviews data
+    if (typeof loadClinics === "function") loadClinics();
+    if (typeof loadReviews === "function") loadReviews();
+  } else {
+    // Show chat view
+    chatView.style.display = "block";
+    reviewsView.style.display = "none";
+    viewAllReviewsBtn.classList.remove("active");
+    viewAllReviewsBtn.querySelector("span").textContent = "View All Reviews";
+  }
 });
 
 // Reviews state

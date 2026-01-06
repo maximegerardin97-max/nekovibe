@@ -34,18 +34,15 @@
             <input type="checkbox" value="social" name="sources" disabled />
             <span>Social</span>
           </label>
+          <button id="view-all-reviews-btn" class="source-pill source-pill-button">
+            <span>View All Reviews</span>
+          </button>
         </div>
       </header>
 
-      <!-- Tab Navigation -->
-      <nav class="tab-navigation" role="tablist">
-        <button class="tab-button active" data-tab="chat" role="tab" aria-selected="true">Chat</button>
-        <button class="tab-button" data-tab="reviews" role="tab" aria-selected="false">All Reviews</button>
-      </nav>
-
       <main>
         <!-- Chat View -->
-        <div class="tab-content active" id="chat-view">
+        <div id="chat-view">
           <section id="chat-stream" aria-live="polite">
             <div class="empty-state">
               <p>Try "What do patients say about the Covent Garden clinic?"</p>
@@ -70,7 +67,7 @@
         </div>
 
         <!-- Reviews View -->
-        <div class="tab-content" id="reviews-view">
+        <div id="reviews-view" style="display: none;">
           <div class="reviews-container">
             <!-- Filters -->
             <div class="reviews-filters">
