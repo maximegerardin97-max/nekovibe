@@ -147,9 +147,19 @@ body {
 }
 
 .source-pill-button {
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--accent-teal);
   background: rgba(80, 183, 166, 0.08);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color var(--transition-base), background var(--transition-base);
+  color: var(--text-main);
+  font-family: inherit;
+  margin: 0;
 }
 
 .source-pill-button:hover {
@@ -165,6 +175,10 @@ body {
 
 .source-pill-button.active span {
   color: #fff;
+}
+
+.source-pill-button span {
+  color: inherit;
 }
 
 #chat-stream {
