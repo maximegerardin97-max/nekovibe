@@ -1,9 +1,8 @@
 /**
  * Articles/Blogs/Press Ingestion Job
- * Searches for and fetches articles, blog posts, and press mentions about Neko
+ * Fetches articles, blog posts, and press mentions about Neko Health using GNews API
  */
 
-import { chromium, Browser, Page } from 'playwright';
 import * as dotenv from 'dotenv';
 import { IngestionJob, IngestionResult, Article } from '../../types';
 import { storeArticle } from '../../data/supabase';
@@ -11,17 +10,36 @@ import { parseArticle, RawArticleData } from '../parsers/articleParser';
 
 dotenv.config();
 
+interface GNewsArticle {
+  title: string;
+  description: string;
+  content: string;
+  url: string;
+  image?: string;
+  publishedAt: string;
+  source: {
+    name: string;
+    url: string;
+  };
+}
+
 export class FetchArticlesAndBlogsJob implements IngestionJob {
   name = 'fetchArticlesAndBlogs';
 
-  private browser: Browser | null = null;
+  private readonly apiKey: string;
+  private readonly apiUrl = 'https://gnews.io/api/v4';
   private readonly searchTerms = [
     'Neko Health',
     '"Neko Health"',
-    'Neko Health clinic',
-    'Neko Health veterinary',
-    'Neko Health vet',
   ];
+
+  constructor() {
+    const apiKey = process.env.GNEWS_API_KEY;
+    if (!apiKey) {
+      throw new Error('GNEWS_API_KEY not set in .env file');
+    }
+    this.apiKey = apiKey;
+  }
 
   async run(): Promise<IngestionResult> {
     const result: IngestionResult = {
@@ -30,37 +48,38 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       errors: [],
     };
 
-    console.log('Starting Articles/Blogs/Press ingestion...');
+    console.log('Starting Articles/Blogs/Press ingestion using GNews API...');
 
     try {
-      this.browser = await chromium.launch({
-        headless: true,
-        args: ['--disable-blink-features=AutomationControlled'],
-      });
-
-      const allArticles: RawArticleData[] = [];
+      const allArticles: GNewsArticle[] = [];
 
       // Search using different search terms
       for (const searchTerm of this.searchTerms) {
-        console.log(`\nSearching for: "${searchTerm}"`);
-        const articles = await this.searchForArticles(searchTerm);
+        console.log(`\nSearching GNews for: "${searchTerm}"`);
+        const articles = await this.searchGNews(searchTerm);
         allArticles.push(...articles);
+        console.log(`  Found ${articles.length} articles`);
       }
 
       // Deduplicate by URL
       const uniqueArticles = this.deduplicateArticles(allArticles);
-      console.log(`\nFound ${uniqueArticles.length} unique articles`);
+      console.log(`\nFound ${uniqueArticles.length} unique articles total`);
 
-      // Fetch full content for each article
+      // Store each article
       for (const article of uniqueArticles) {
         try {
-          const fullArticle = await this.fetchArticleContent(article);
-          if (!fullArticle) {
-            result.errors.push({ item: article.url, error: 'Failed to fetch content' });
-            continue;
-          }
+          const rawArticle: RawArticleData = {
+            externalId: article.url,
+            source: this.determineSourceType(article.source.name, article.url),
+            title: article.title,
+            description: article.description,
+            url: article.url,
+            author: article.source.name,
+            publishedAt: article.publishedAt ? new Date(article.publishedAt) : undefined,
+            content: article.content || article.description,
+          };
 
-          const parsed = parseArticle(fullArticle);
+          const parsed = parseArticle(rawArticle);
           if (!parsed) {
             result.errors.push({ item: article.url, error: 'Failed to parse article' });
             continue;
@@ -85,10 +104,6 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('Fatal error in Articles job:', errorMessage);
       result.errors.push({ item: 'job', error: errorMessage });
-    } finally {
-      if (this.browser) {
-        await this.browser.close();
-      }
     }
 
     console.log(`\n✅ Articles/Blogs/Press ingestion complete:`);
@@ -99,172 +114,50 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
     return result;
   }
 
-  private async searchForArticles(searchTerm: string): Promise<RawArticleData[]> {
-    const articles: RawArticleData[] = [];
-
-    if (!this.browser) {
-      throw new Error('Browser not initialized');
-    }
-
-    const context = await this.browser.newContext({
-      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      extraHTTPHeaders: {
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-    const page = await context.newPage();
-
+  private async searchGNews(searchTerm: string): Promise<GNewsArticle[]> {
     try {
-      // Use Google Search
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchTerm)}&tbm=nws`;
-      console.log(`  Searching: ${searchUrl}`);
+      const params = new URLSearchParams({
+        q: searchTerm,
+        token: this.apiKey,
+        max: '50',
+        lang: 'en',
+        sortby: 'publishedAt',
+      });
 
-      await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(2000);
+      const url = `${this.apiUrl}/search?${params.toString()}`;
+      console.log(`  Calling GNews API: ${url.replace(this.apiKey, '***')}`);
 
-      // Extract search results
-      const resultElements = await page.locator('div[data-ved], .g, .tF2Cxc').all();
+      const response = await fetch(url);
 
-      for (const element of resultElements.slice(0, 20)) {
-        // Limit to first 20 results per search term
-        try {
-          const articleData = await this.extractSearchResult(element);
-          if (articleData) {
-            articles.push(articleData);
-          }
-        } catch (error) {
-          // Skip invalid results
-        }
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`  GNews API error: ${response.status} ${errorText}`);
+        return [];
       }
+
+      const data: any = await response.json();
+      const articles = data.articles || [];
+
+      console.log(`  GNews returned ${articles.length} articles (total available: ${data.totalArticles || 0})`);
+      return articles;
     } catch (error) {
-      console.warn(`  Error searching for "${searchTerm}":`, error);
-    } finally {
-      await page.close();
-      await context.close();
-    }
-
-    return articles;
-  }
-
-  private async extractSearchResult(element: any): Promise<RawArticleData | null> {
-    try {
-      // Extract URL
-      const linkElement = element.locator('a[href^="http"]').first();
-      const url = await linkElement.getAttribute('href').catch(() => null);
-      if (!url) return null;
-
-      // Extract title
-      const titleElement = element.locator('h3, .LC20lb, .DKV0Md').first();
-      const title = await titleElement.textContent().catch(() => null) || '';
-
-      // Extract description/snippet
-      const descElement = element.locator('.VwiC3b, .s, .st').first();
-      const description = await descElement.textContent().catch(() => null) || '';
-
-      // Extract source/publication
-      const sourceElement = element.locator('.fG8Fp, .UPmit').first();
-      const source = await sourceElement.textContent().catch(() => null) || '';
-
-      // Extract date if available
-      const dateElement = element.locator('.fG8Fp, .f').last();
-      const dateText = await dateElement.textContent().catch(() => null) || '';
-
-      return {
-        externalId: url,
-        source: this.normalizeSource(source),
-        title: title.trim(),
-        description: description.trim(),
-        url,
-        publishedAt: this.parseDate(dateText),
-      };
-    } catch (error) {
-      return null;
+      console.error(`  Error calling GNews API for "${searchTerm}":`, error);
+      return [];
     }
   }
 
-  private async fetchArticleContent(article: RawArticleData): Promise<RawArticleData | null> {
-    if (!this.browser) {
-      throw new Error('Browser not initialized');
-    }
+  private determineSourceType(sourceName: string, url: string): string {
+    const nameLower = sourceName.toLowerCase();
+    const urlLower = url.toLowerCase();
 
-    const page = await this.browser.newPage();
-
-    try {
-      console.log(`  Fetching: ${article.url}`);
-      await page.goto(article.url, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(2000);
-
-      // Get full HTML
-      const html = await page.content();
-
-      // Try to extract author
-      const authorSelectors = [
-        '[rel="author"]',
-        '.author',
-        '[class*="author"]',
-        '[itemprop="author"]',
-      ];
-
-      let author: string | undefined;
-      for (const selector of authorSelectors) {
-        try {
-          const authorElement = page.locator(selector).first();
-          if (await authorElement.isVisible({ timeout: 1000 })) {
-            author = await authorElement.textContent() || undefined;
-            if (author) break;
-          }
-        } catch {
-          // Continue to next selector
-        }
-      }
-
-      // Try to extract published date from page
-      const dateSelectors = [
-        'time[datetime]',
-        '[itemprop="datePublished"]',
-        '[class*="date"]',
-        '[class*="published"]',
-      ];
-
-      let publishedAt = article.publishedAt;
-      for (const selector of dateSelectors) {
-        try {
-          const dateElement = page.locator(selector).first();
-          if (await dateElement.isVisible({ timeout: 1000 })) {
-            const dateAttr = await dateElement.getAttribute('datetime') || 
-                           await dateElement.textContent() || '';
-            if (dateAttr) {
-              const parsed = this.parseDate(dateAttr);
-              if (parsed) {
-                publishedAt = parsed;
-                break;
-              }
-            }
-          }
-        } catch {
-          // Continue to next selector
-        }
-      }
-
-      return {
-        ...article,
-        html,
-        content: html, // Will be parsed by articleParser
-        author,
-        publishedAt,
-      };
-    } catch (error) {
-      console.warn(`  Error fetching content from ${article.url}:`, error);
-      // Return article with basic info even if full fetch fails
-      return article;
-    } finally {
-      await page.close();
-    }
+    if (urlLower.includes('blog') || nameLower.includes('blog')) return 'blog';
+    if (urlLower.includes('press') || nameLower.includes('press') || nameLower.includes('news')) return 'press';
+    return 'article';
   }
 
-  private deduplicateArticles(articles: RawArticleData[]): RawArticleData[] {
+  private deduplicateArticles(articles: GNewsArticle[]): GNewsArticle[] {
     const seen = new Set<string>();
-    const unique: RawArticleData[] = [];
+    const unique: GNewsArticle[] = [];
 
     for (const article of articles) {
       const url = article.url.toLowerCase().split('?')[0]; // Remove query params for deduplication
@@ -277,43 +170,5 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
     return unique;
   }
 
-  private normalizeSource(source: string): string {
-    const lower = source.toLowerCase();
-    if (lower.includes('blog')) return 'blog';
-    if (lower.includes('press') || lower.includes('news')) return 'press';
-    return 'article';
-  }
-
-  private parseDate(dateText: string): Date | undefined {
-    if (!dateText) return undefined;
-
-    try {
-      // Try ISO format first
-      const isoDate = new Date(dateText);
-      if (!isNaN(isoDate.getTime())) {
-        return isoDate;
-      }
-
-      // Try common date formats
-      const formats = [
-        /(\d{1,2})\/(\d{1,2})\/(\d{4})/, // MM/DD/YYYY
-        /(\d{4})-(\d{1,2})-(\d{1,2})/, // YYYY-MM-DD
-      ];
-
-      for (const format of formats) {
-        const match = dateText.match(format);
-        if (match) {
-          const date = new Date(dateText);
-          if (!isNaN(date.getTime())) {
-            return date;
-          }
-        }
-      }
-
-      return undefined;
-    } catch {
-      return undefined;
-    }
-  }
 }
 
