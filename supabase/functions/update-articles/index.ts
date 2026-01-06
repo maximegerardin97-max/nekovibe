@@ -57,27 +57,25 @@ serve(async (req) => {
         const updates: any = {};
         let needsUpdate = false;
 
-        // Fix date if it's invalid, missing, or in wrong format
-        let dateNeedsFix = false;
+        // ALWAYS fix date - check if it's invalid, missing, or in wrong format
         let fixedDate: Date | null = null;
+        let dateNeedsFix = true;
         
         if (article.published_at) {
           const currentDate = new Date(article.published_at);
           const now = new Date();
           const year2000 = new Date('2000-01-01');
           
-          // Check if date is invalid, too old, in future, or just a bad format
-          if (isNaN(currentDate.getTime()) || 
-              currentDate < year2000 || 
-              currentDate > now ||
-              article.published_at === '1970-01-01T00:00:00.000Z' || // Unix epoch default
-              article.published_at.includes('Invalid') ||
-              article.published_at.includes('NaN')) {
-            dateNeedsFix = true;
+          // Check if date is valid
+          if (!isNaN(currentDate.getTime()) && 
+              currentDate >= year2000 && 
+              currentDate <= now &&
+              article.published_at !== '1970-01-01T00:00:00.000Z' &&
+              !article.published_at.includes('Invalid') &&
+              !article.published_at.includes('NaN')) {
+            // Date is valid, skip fixing
+            dateNeedsFix = false;
           }
-        } else {
-          // No date at all
-          dateNeedsFix = true;
         }
         
         if (dateNeedsFix) {
@@ -86,18 +84,17 @@ serve(async (req) => {
                      tryExtractDateFromContent(article.content || article.description || "") ||
                      tryExtractDateFromMetadata(article.metadata);
           
-          if (fixedDate) {
-            updates.published_at = fixedDate.toISOString();
-            needsUpdate = true;
-            console.log(`  Fixed date for: ${article.title} -> ${fixedDate.toISOString()}`);
+          if (!fixedDate) {
+            // If we can't find a date, set to a reasonable default (6 months ago)
+            fixedDate = new Date();
+            fixedDate.setMonth(fixedDate.getMonth() - 6);
+            console.log(`  Using default date (6 months ago) for: ${article.title}`);
           } else {
-            // If we can't find a date, set to a reasonable default (1 year ago for old articles)
-            const defaultDate = new Date();
-            defaultDate.setFullYear(defaultDate.getFullYear() - 1);
-            updates.published_at = defaultDate.toISOString();
-            needsUpdate = true;
-            console.log(`  Set default date for: ${article.title} -> ${defaultDate.toISOString()}`);
+            console.log(`  Fixed date for: ${article.title} -> ${fixedDate.toISOString()}`);
           }
+          
+          updates.published_at = fixedDate.toISOString();
+          needsUpdate = true;
         }
 
         // Check if LinkedIn post needs categorization
