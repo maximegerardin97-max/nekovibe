@@ -13,6 +13,8 @@ const corsHeaders = {
 
 const gnewsApiKey = Deno.env.get("GNEWS_API_KEY") ?? "";
 const tavilyApiKey = Deno.env.get("TAVILY_API_KEY") ?? "";
+const openaiApiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
+const openaiModel = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 const gnewsApiUrl = "https://gnews.io/api/v4";
 const tavilyApiUrl = "https://api.tavily.com/search";
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
@@ -119,7 +121,7 @@ serve(async (req) => {
               search_depth: "advanced",
               include_answer: false,
               include_images: false,
-              include_raw_content: true,
+              include_raw_content: true, // Get full content
               max_results: 30,
             }),
           });
@@ -144,11 +146,11 @@ serve(async (req) => {
           allArticles.push(...nonLinkedInResults.map((r: any) => ({
             title: r.title || 'Untitled',
             description: r.content?.substring(0, 500) || '',
-            content: r.content || '',
+            content: r.content || '', // Full content from Tavily
             url: r.url,
-            publishedAt: r.published_date || new Date().toISOString(),
+            publishedAt: parseDate(r.published_date) || null,
             source: {
-              name: r.author || new URL(r.url).hostname,
+              name: r.author || extractDomainName(r.url),
               url: new URL(r.url).origin,
             },
             provider: 'tavily',
@@ -201,6 +203,18 @@ serve(async (req) => {
           sourceType = 'press';
         }
 
+        // Generate summary if we have content and OpenAI key
+        let summary = null;
+        const fullContent = article.content || article.description || '';
+        if (fullContent && fullContent.length > 200 && openaiApiKey) {
+          try {
+            summary = await summarizeContent(fullContent, article.title);
+            console.log(`  Generated summary for: ${article.title}`);
+          } catch (error) {
+            console.warn(`  Failed to generate summary: ${error}`);
+          }
+        }
+
         // Insert article
         const { error: insertError } = await supabase.from('articles').insert({
           external_id: article.url,
@@ -209,12 +223,13 @@ serve(async (req) => {
           description: article.description || '',
           url: article.url,
           author: article.source.name,
-          published_at: article.publishedAt ? new Date(article.publishedAt).toISOString() : null,
-          content: article.content || article.description || '',
+          published_at: article.publishedAt ? parseDate(article.publishedAt)?.toISOString() || null : null,
+          content: fullContent,
           metadata: {
             image: article.image,
             source_url: article.source.url,
             provider: article.provider || 'unknown',
+            summary: summary,
           },
         });
 
@@ -243,6 +258,70 @@ serve(async (req) => {
     return respond({ error: "Unexpected error", details: `${error}` }, 500);
   }
 });
+
+function parseDate(dateStr: string | null | undefined): Date | null {
+  if (!dateStr) return null;
+  try {
+    const date = new Date(dateStr);
+    if (!isNaN(date.getTime())) {
+      return date;
+    }
+  } catch {
+    // Invalid date
+  }
+  return null;
+}
+
+function extractDomainName(url: string): string {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.replace('www.', '');
+  } catch {
+    return 'Unknown';
+  }
+}
+
+async function summarizeContent(content: string, title: string): Promise<string | null> {
+  if (!openaiApiKey) return null;
+  
+  const prompt = `Summarize the following article about Neko Health in 2-3 sentences. Focus on key points and main message.
+
+Title: ${title}
+
+Content:
+${content.substring(0, 4000)}`;
+
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: openaiModel,
+        temperature: 0.3,
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert at summarizing articles. Provide concise, informative summaries.",
+          },
+          { role: "user", content: prompt },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const completion = await response.json();
+    return completion?.choices?.[0]?.message?.content?.trim() ?? null;
+  } catch (error) {
+    console.error("OpenAI summarization error:", error);
+    return null;
+  }
+}
 
 function respond(payload: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(payload), {
