@@ -501,6 +501,29 @@ button[type="submit"]:hover {
 .review-comment {
   max-width: 500px;
   line-height: 1.5;
+  position: relative;
+}
+
+.comment-text,
+.comment-full {
+  display: inline;
+}
+
+.comment-toggle {
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--accent-teal);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+  transition: color var(--transition-base);
+}
+
+.comment-toggle:hover {
+  color: var(--accent-blue);
 }
 
 .loading-state,
