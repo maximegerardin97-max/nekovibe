@@ -10,6 +10,7 @@
   <body
     data-function-url="https://cqlopsqqqzzkfpmcntbv.supabase.co/functions/v1/nekovibe-chat"
     data-apikey="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNxbG9wc3FxcXp6a2ZwbWNudGJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMxMjUxNDMsImV4cCI6MjA3ODcwMTE0M30.J3vuzmF7cG3e6ZMx_NwHtmTIqQKJvKP1cGOXcoXBaX0"
+    data-supabase-url="https://cqlopsqqqzzkfpmcntbv.supabase.co"
   >
     <div class="app-shell">
       <header class="app-header">
@@ -33,34 +34,114 @@
             <input type="checkbox" value="social" name="sources" disabled />
             <span>Social</span>
           </label>
+          <button id="view-all-reviews-btn" class="source-pill-button" type="button">
+            View All Reviews
+          </button>
         </div>
       </header>
 
       <main>
-        <section id="chat-stream" aria-live="polite">
-          <div class="empty-state">
-            <p>Try “What do patients say about the Covent Garden clinic?”</p>
-            <p>or “Summarize top concerns from the last 30 days”.</p>
-          </div>
-        </section>
+        <!-- Chat View -->
+        <div id="chat-view">
+          <section id="chat-stream" aria-live="polite">
+            <div class="empty-state">
+              <p>Try "What do patients say about the Covent Garden clinic?"</p>
+              <p>or "Summarize top concerns from the last 30 days".</p>
+            </div>
+          </section>
 
-        <form id="ask-form">
-          <div class="input-wrapper">
-            <textarea
-              name="prompt"
-              id="prompt"
-              rows="3"
-              placeholder="Ask anything…"
-              autocomplete="off"
-            ></textarea>
-            <button type="submit" aria-label="Send">
-              <span>Send</span>
-            </button>
+          <form id="ask-form">
+            <div class="input-wrapper">
+              <textarea
+                name="prompt"
+                id="prompt"
+                rows="3"
+                placeholder="Ask anything…"
+                autocomplete="off"
+              ></textarea>
+              <button type="submit" aria-label="Send">
+                <span>Send</span>
+              </button>
+            </div>
+          </form>
+        </div>
+
+        <!-- Reviews View -->
+        <div id="reviews-view" style="display: none;">
+          <div class="reviews-container">
+            <!-- Filters -->
+            <div class="reviews-filters">
+              <div class="filter-group">
+                <label for="filter-clinic">Clinic</label>
+                <select id="filter-clinic">
+                  <option value="">All Clinics</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-rating">Rating</label>
+                <select id="filter-rating">
+                  <option value="">All Ratings</option>
+                  <option value="5">5 Stars</option>
+                  <option value="4">4 Stars</option>
+                  <option value="3">3 Stars</option>
+                  <option value="2">2 Stars</option>
+                  <option value="1">1 Star</option>
+                </select>
+              </div>
+              <div class="filter-group">
+                <label for="filter-date-from">Date From</label>
+                <input type="date" id="filter-date-from" />
+              </div>
+              <div class="filter-group">
+                <label for="filter-date-to">Date To</label>
+                <input type="date" id="filter-date-to" />
+              </div>
+              <div class="filter-group filter-group-wide">
+                <label for="filter-comment">Search Comment</label>
+                <input type="text" id="filter-comment" placeholder="Search in review text..." />
+              </div>
+              <div class="filter-actions">
+                <button id="apply-filters" class="filter-btn">Apply Filters</button>
+                <button id="clear-filters" class="filter-btn filter-btn-secondary">Clear</button>
+              </div>
+            </div>
+
+            <!-- Results Info -->
+            <div class="reviews-info">
+              <span id="reviews-count">Loading reviews...</span>
+            </div>
+
+            <!-- Reviews Table -->
+            <div class="reviews-table-container">
+              <table class="reviews-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Rating</th>
+                    <th>Clinic</th>
+                    <th>Comment</th>
+                  </tr>
+                </thead>
+                <tbody id="reviews-tbody">
+                  <tr>
+                    <td colspan="4" class="loading-state">Loading reviews...</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="reviews-pagination">
+              <button id="prev-page" class="pagination-btn" disabled>Previous</button>
+              <span id="page-info">Page 1</span>
+              <button id="next-page" class="pagination-btn">Next</button>
+            </div>
           </div>
-        </form>
+        </div>
       </main>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script type="module" src="./app.js"></script>
   </body>
 </html>

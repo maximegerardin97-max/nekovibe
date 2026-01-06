@@ -263,3 +263,467 @@ function createId() {
   return `temp-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+// ===== Reviews View Functionality =====
+
+const supabaseUrl = document.body.dataset.supabaseUrl || "";
+const supabaseKey = document.body.dataset.apikey || "";
+
+let supabaseClient = null;
+
+// Initialize Supabase client when library is loaded
+function initSupabaseClient() {
+  if (supabaseUrl && supabaseKey && typeof supabase !== "undefined") {
+    supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+    return true;
+  }
+  return false;
+}
+
+// Try to initialize immediately, or wait for DOMContentLoaded
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    initSupabaseClient();
+    setupReviewsView();
+  });
+} else {
+  // DOM already loaded, wait a bit for supabase script to load
+  setTimeout(() => {
+    initSupabaseClient();
+    setupReviewsView();
+  }, 100);
+}
+
+// View switching - button next to Social
+const viewAllReviewsBtn = document.getElementById("view-all-reviews-btn");
+const chatView = document.getElementById("chat-view");
+const reviewsView = document.getElementById("reviews-view");
+
+let showingReviews = false;
+
+viewAllReviewsBtn?.addEventListener("click", () => {
+  showingReviews = !showingReviews;
+  
+  if (showingReviews) {
+    // Show reviews view
+    chatView.style.display = "none";
+    reviewsView.style.display = "block";
+    viewAllReviewsBtn.classList.add("active");
+    viewAllReviewsBtn.textContent = "Back to Chat";
+    
+    // Load reviews data
+    if (typeof loadClinics === "function") loadClinics();
+    if (typeof loadReviews === "function") loadReviews();
+  } else {
+    // Show chat view
+    chatView.style.display = "block";
+    reviewsView.style.display = "none";
+    viewAllReviewsBtn.classList.remove("active");
+    viewAllReviewsBtn.textContent = "View All Reviews";
+  }
+});
+
+// Reviews state
+const reviewsState = {
+  currentPage: 1,
+  pageSize: 50,
+  filters: {
+    clinic: "",
+    rating: "",
+    dateFrom: "",
+    dateTo: "",
+    comment: "",
+  },
+};
+
+// Load clinics dropdown
+async function loadClinics() {
+  if (!supabaseClient) return;
+  
+  try {
+    const { data, error } = await supabaseClient
+      .from("google_reviews")
+      .select("clinic_name")
+      .order("clinic_name");
+    
+    if (error) throw error;
+    
+    const uniqueClinics = [...new Set((data || []).map((r) => r.clinic_name))];
+    const clinicSelect = document.getElementById("filter-clinic");
+    
+    if (clinicSelect) {
+      // Keep "All Clinics" option, then add unique clinics
+      clinicSelect.innerHTML = '<option value="">All Clinics</option>';
+      uniqueClinics.forEach((clinic) => {
+        const option = document.createElement("option");
+        option.value = clinic;
+        option.textContent = clinic;
+        clinicSelect.appendChild(option);
+      });
+    }
+  } catch (error) {
+    console.error("Error loading clinics:", error);
+  }
+}
+
+// Load reviews with filters
+async function loadReviews() {
+  if (!supabaseClient) {
+    updateReviewsTable([], "Supabase client not initialized. Please check your configuration.");
+    return;
+  }
+  
+  const tbody = document.getElementById("reviews-tbody");
+  const countSpan = document.getElementById("reviews-count");
+  
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading reviews...</td></tr>';
+  }
+  
+  try {
+    let query = supabaseClient
+      .from("google_reviews")
+      .select("published_at, rating, text, clinic_name", { count: "exact" });
+    
+    // Apply filters
+    if (reviewsState.filters.clinic) {
+      query = query.eq("clinic_name", reviewsState.filters.clinic);
+    }
+    
+    if (reviewsState.filters.rating) {
+      query = query.eq("rating", parseInt(reviewsState.filters.rating));
+    }
+    
+    if (reviewsState.filters.dateFrom) {
+      query = query.gte("published_at", reviewsState.filters.dateFrom);
+    }
+    
+    if (reviewsState.filters.dateTo) {
+      // Add one day to include the entire end date
+      const endDate = new Date(reviewsState.filters.dateTo);
+      endDate.setDate(endDate.getDate() + 1);
+      query = query.lt("published_at", endDate.toISOString().split("T")[0]);
+    }
+    
+    if (reviewsState.filters.comment) {
+      query = query.ilike("text", `%${reviewsState.filters.comment}%`);
+    }
+    
+    // Order by date (newest first)
+    query = query.order("published_at", { ascending: false });
+    
+    // Pagination
+    const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
+    const to = from + reviewsState.pageSize - 1;
+    query = query.range(from, to);
+    
+    const { data, error, count } = await query;
+    
+    if (error) throw error;
+    
+    // Update count
+    if (countSpan) {
+      const total = count || 0;
+      const start = total > 0 ? from + 1 : 0;
+      const end = Math.min(from + reviewsState.pageSize, total);
+      countSpan.textContent = `Showing ${start}-${end} of ${total} reviews`;
+    }
+    
+    // Update pagination buttons
+    const prevPageBtn = document.getElementById("prev-page");
+    const nextPageBtn = document.getElementById("next-page");
+    
+    if (prevPageBtn) {
+      prevPageBtn.disabled = reviewsState.currentPage === 1;
+    }
+    if (nextPageBtn) {
+      const total = count || 0;
+      const maxPage = Math.ceil(total / reviewsState.pageSize);
+      nextPageBtn.disabled = reviewsState.currentPage >= maxPage;
+    }
+    
+    // Update page info
+    const pageInfo = document.getElementById("page-info");
+    if (pageInfo) {
+      const total = count || 0;
+      const maxPage = Math.ceil(total / reviewsState.pageSize);
+      pageInfo.textContent = `Page ${reviewsState.currentPage} of ${maxPage || 1}`;
+    }
+    
+    updateReviewsTable(data || [], null);
+  } catch (error) {
+    console.error("Error loading reviews:", error);
+    updateReviewsTable([], `Error loading reviews: ${error.message}`);
+  }
+}
+
+function updateReviewsTable(reviews, errorMessage) {
+  const tbody = document.getElementById("reviews-tbody");
+  if (!tbody) return;
+  
+  if (errorMessage) {
+    tbody.innerHTML = `<tr><td colspan="4" class="error-state">${errorMessage}</td></tr>`;
+    return;
+  }
+  
+  if (reviews.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No reviews found matching your filters.</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = reviews
+    .map((review) => {
+      const date = review.published_at
+        ? new Date(review.published_at).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })
+        : "N/A";
+      const rating = review.rating ? "★".repeat(review.rating) : "N/A";
+      const clinic = review.clinic_name || "Unknown";
+      const comment = review.text || "";
+      
+      return `
+        <tr>
+          <td class="review-date">${date}</td>
+          <td class="review-rating">${rating}</td>
+          <td class="review-clinic">${escapeHtml(clinic)}</td>
+          <td class="review-comment">${escapeHtml(comment)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Setup reviews view functionality
+function setupReviewsView() {
+  // Filter controls
+  const filterClinic = document.getElementById("filter-clinic");
+  const filterRating = document.getElementById("filter-rating");
+  const filterDateFrom = document.getElementById("filter-date-from");
+  const filterDateTo = document.getElementById("filter-date-to");
+  const filterComment = document.getElementById("filter-comment");
+  const applyFiltersBtn = document.getElementById("apply-filters");
+  const clearFiltersBtn = document.getElementById("clear-filters");
+  
+  applyFiltersBtn?.addEventListener("click", () => {
+    reviewsState.filters = {
+      clinic: filterClinic?.value || "",
+      rating: filterRating?.value || "",
+      dateFrom: filterDateFrom?.value || "",
+      dateTo: filterDateTo?.value || "",
+      comment: filterComment?.value || "",
+    };
+    reviewsState.currentPage = 1;
+    loadReviews();
+  });
+  
+  clearFiltersBtn?.addEventListener("click", () => {
+    if (filterClinic) filterClinic.value = "";
+    if (filterRating) filterRating.value = "";
+    if (filterDateFrom) filterDateFrom.value = "";
+    if (filterDateTo) filterDateTo.value = "";
+    if (filterComment) filterComment.value = "";
+    reviewsState.filters = {
+      clinic: "",
+      rating: "",
+      dateFrom: "",
+      dateTo: "",
+      comment: "",
+    };
+    reviewsState.currentPage = 1;
+    loadReviews();
+  });
+  
+  // Pagination
+  const prevPageBtn = document.getElementById("prev-page");
+  const nextPageBtn = document.getElementById("next-page");
+  
+  prevPageBtn?.addEventListener("click", () => {
+    if (reviewsState.currentPage > 1) {
+      reviewsState.currentPage--;
+      loadReviews();
+    }
+  });
+  
+  nextPageBtn?.addEventListener("click", () => {
+    reviewsState.currentPage++;
+    loadReviews();
+  });
+  
+  // Make loadClinics and loadReviews available globally for tab switching
+  window.loadClinics = loadClinics;
+  window.loadReviews = loadReviews;
+}
+    if (!supabaseClient) return;
+    
+    try {
+      const { data, error } = await supabaseClient
+        .from("google_reviews")
+        .select("clinic_name")
+        .order("clinic_name");
+      
+      if (error) throw error;
+      
+      const uniqueClinics = [...new Set((data || []).map((r) => r.clinic_name))];
+      const clinicSelect = document.getElementById("filter-clinic");
+      
+      if (clinicSelect) {
+        // Keep "All Clinics" option, then add unique clinics
+        clinicSelect.innerHTML = '<option value="">All Clinics</option>';
+        uniqueClinics.forEach((clinic) => {
+          const option = document.createElement("option");
+          option.value = clinic;
+          option.textContent = clinic;
+          clinicSelect.appendChild(option);
+        });
+      }
+    } catch (error) {
+      console.error("Error loading clinics:", error);
+    }
+  }
+  
+  // Load reviews with filters
+  async function loadReviews() {
+    if (!supabaseClient) {
+      updateReviewsTable([], "Supabase client not initialized. Please check your configuration.");
+      return;
+    }
+    
+    const tbody = document.getElementById("reviews-tbody");
+    const countSpan = document.getElementById("reviews-count");
+    
+    if (tbody) {
+      tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading reviews...</td></tr>';
+    }
+    
+    try {
+      let query = supabaseClient
+        .from("google_reviews")
+        .select("published_at, rating, text, clinic_name", { count: "exact" });
+      
+      // Apply filters
+      if (reviewsState.filters.clinic) {
+        query = query.eq("clinic_name", reviewsState.filters.clinic);
+      }
+      
+      if (reviewsState.filters.rating) {
+        query = query.eq("rating", parseInt(reviewsState.filters.rating));
+      }
+      
+      if (reviewsState.filters.dateFrom) {
+        query = query.gte("published_at", reviewsState.filters.dateFrom);
+      }
+      
+      if (reviewsState.filters.dateTo) {
+        // Add one day to include the entire end date
+        const endDate = new Date(reviewsState.filters.dateTo);
+        endDate.setDate(endDate.getDate() + 1);
+        query = query.lt("published_at", endDate.toISOString().split("T")[0]);
+      }
+      
+      if (reviewsState.filters.comment) {
+        query = query.ilike("text", `%${reviewsState.filters.comment}%`);
+      }
+      
+      // Order by date (newest first)
+      query = query.order("published_at", { ascending: false });
+      
+      // Pagination
+      const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
+      const to = from + reviewsState.pageSize - 1;
+      query = query.range(from, to);
+      
+      const { data, error, count } = await query;
+      
+      if (error) throw error;
+      
+      // Update count
+      if (countSpan) {
+        const total = count || 0;
+        const start = total > 0 ? from + 1 : 0;
+        const end = Math.min(from + reviewsState.pageSize, total);
+        countSpan.textContent = `Showing ${start}-${end} of ${total} reviews`;
+      }
+      
+      // Update pagination buttons
+      if (prevPageBtn) {
+        prevPageBtn.disabled = reviewsState.currentPage === 1;
+      }
+      if (nextPageBtn) {
+        const total = count || 0;
+        const maxPage = Math.ceil(total / reviewsState.pageSize);
+        nextPageBtn.disabled = reviewsState.currentPage >= maxPage;
+      }
+      
+      // Update page info
+      const pageInfo = document.getElementById("page-info");
+      if (pageInfo) {
+        const total = count || 0;
+        const maxPage = Math.ceil(total / reviewsState.pageSize);
+        pageInfo.textContent = `Page ${reviewsState.currentPage} of ${maxPage || 1}`;
+      }
+      
+      updateReviewsTable(data || [], null);
+    } catch (error) {
+      console.error("Error loading reviews:", error);
+      updateReviewsTable([], `Error loading reviews: ${error.message}`);
+    }
+  }
+  
+  function updateReviewsTable(reviews, errorMessage) {
+    const tbody = document.getElementById("reviews-tbody");
+    if (!tbody) return;
+    
+    if (errorMessage) {
+      tbody.innerHTML = `<tr><td colspan="4" class="error-state">${errorMessage}</td></tr>`;
+      return;
+    }
+    
+    if (reviews.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No reviews found matching your filters.</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = reviews
+      .map((review) => {
+        const date = review.published_at
+          ? new Date(review.published_at).toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            })
+          : "N/A";
+        const rating = review.rating ? "★".repeat(review.rating) : "N/A";
+        const clinic = review.clinic_name || "Unknown";
+        const comment = review.text || "";
+        
+        return `
+          <tr>
+            <td class="review-date">${date}</td>
+            <td class="review-rating">${rating}</td>
+            <td class="review-clinic">${escapeHtml(clinic)}</td>
+            <td class="review-comment">${escapeHtml(comment)}</td>
+          </tr>
+        `;
+      })
+      .join("");
+  }
+  
+  function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  }
+  
+  // Make loadClinics and loadReviews available globally for tab switching
+  window.loadClinics = loadClinics;
+  window.loadReviews = loadReviews;
+}
+
