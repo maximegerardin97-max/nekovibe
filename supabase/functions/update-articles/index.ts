@@ -57,35 +57,46 @@ serve(async (req) => {
         const updates: any = {};
         let needsUpdate = false;
 
-        // Fix date if it's invalid or missing
+        // Fix date if it's invalid, missing, or in wrong format
+        let dateNeedsFix = false;
+        let fixedDate: Date | null = null;
+        
         if (article.published_at) {
           const currentDate = new Date(article.published_at);
-          // Check if date is invalid or too old (before 2000) or in the future
           const now = new Date();
           const year2000 = new Date('2000-01-01');
           
+          // Check if date is invalid, too old, in future, or just a bad format
           if (isNaN(currentDate.getTime()) || 
               currentDate < year2000 || 
-              currentDate > now) {
-            // Try to parse from URL or other sources
-            const fixedDate = tryExtractDateFromUrl(article.url) || 
-                             tryExtractDateFromContent(article.content || article.description || "");
-            
-            if (fixedDate) {
-              updates.published_at = fixedDate.toISOString();
-              needsUpdate = true;
-              console.log(`  Fixed date for: ${article.title} -> ${fixedDate.toISOString()}`);
-            }
+              currentDate > now ||
+              article.published_at === '1970-01-01T00:00:00.000Z' || // Unix epoch default
+              article.published_at.includes('Invalid') ||
+              article.published_at.includes('NaN')) {
+            dateNeedsFix = true;
           }
         } else {
-          // No date at all, try to extract from URL or content
-          const extractedDate = tryExtractDateFromUrl(article.url) || 
-                               tryExtractDateFromContent(article.content || article.description || "");
+          // No date at all
+          dateNeedsFix = true;
+        }
+        
+        if (dateNeedsFix) {
+          // Try multiple methods to get a valid date
+          fixedDate = tryExtractDateFromUrl(article.url) || 
+                     tryExtractDateFromContent(article.content || article.description || "") ||
+                     tryExtractDateFromMetadata(article.metadata);
           
-          if (extractedDate) {
-            updates.published_at = extractedDate.toISOString();
+          if (fixedDate) {
+            updates.published_at = fixedDate.toISOString();
             needsUpdate = true;
-            console.log(`  Added date for: ${article.title} -> ${extractedDate.toISOString()}`);
+            console.log(`  Fixed date for: ${article.title} -> ${fixedDate.toISOString()}`);
+          } else {
+            // If we can't find a date, set to a reasonable default (1 year ago for old articles)
+            const defaultDate = new Date();
+            defaultDate.setFullYear(defaultDate.getFullYear() - 1);
+            updates.published_at = defaultDate.toISOString();
+            needsUpdate = true;
+            console.log(`  Set default date for: ${article.title} -> ${defaultDate.toISOString()}`);
           }
         }
 
@@ -199,6 +210,8 @@ function tryExtractDateFromContent(content: string): Date | null {
     /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
     /(\d{2})\/(\d{2})\/(\d{4})/, // MM/DD/YYYY
     /(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),\s+(\d{4})/i,
+    /Published:\s*(\d{4})-(\d{2})-(\d{2})/i,
+    /Date:\s*(\d{4})-(\d{2})-(\d{2})/i,
   ];
   
   for (const pattern of datePatterns) {
@@ -212,6 +225,27 @@ function tryExtractDateFromContent(content: string): Date | null {
       } catch {
         // Continue
       }
+    }
+  }
+  
+  return null;
+}
+
+function tryExtractDateFromMetadata(metadata: any): Date | null {
+  if (!metadata) return null;
+  
+  // Check if metadata has date fields
+  if (metadata.published_date) {
+    const date = new Date(metadata.published_date);
+    if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+      return date;
+    }
+  }
+  
+  if (metadata.publishedAt) {
+    const date = new Date(metadata.publishedAt);
+    if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+      return date;
     }
   }
   
