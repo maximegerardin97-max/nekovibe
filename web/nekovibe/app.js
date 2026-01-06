@@ -640,13 +640,24 @@ function updateArticlesTable(articles, errorMessage) {
   
   tbody.innerHTML = articles
     .map((article) => {
-      const date = article.published_at
-        ? new Date(article.published_at).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })
-        : "N/A";
+      let date = "N/A";
+      if (article.published_at) {
+        try {
+          const dateObj = new Date(article.published_at);
+          // Check if date is valid
+          if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() > 2000) {
+            date = dateObj.toLocaleDateString("en-US", {
+              year: "numeric",
+              month: "short",
+              day: "numeric",
+            });
+          } else {
+            date = "Invalid date";
+          }
+        } catch (error) {
+          date = "Invalid date";
+        }
+      }
       
       // Format source with post type for LinkedIn
       let sourceDisplay = article.source || "Unknown";
