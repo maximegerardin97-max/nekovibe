@@ -308,7 +308,7 @@ viewAllReviewsBtn?.addEventListener("click", () => {
     chatView.style.display = "none";
     reviewsView.style.display = "block";
     viewAllReviewsBtn.classList.add("active");
-    viewAllReviewsBtn.querySelector("span").textContent = "Back to Chat";
+    viewAllReviewsBtn.textContent = "Back to Chat";
     
     // Load reviews data
     if (typeof loadClinics === "function") loadClinics();
@@ -318,7 +318,7 @@ viewAllReviewsBtn?.addEventListener("click", () => {
     chatView.style.display = "block";
     reviewsView.style.display = "none";
     viewAllReviewsBtn.classList.remove("active");
-    viewAllReviewsBtn.querySelector("span").textContent = "View All Reviews";
+    viewAllReviewsBtn.textContent = "View All Reviews";
   }
 });
 

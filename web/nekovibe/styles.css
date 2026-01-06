@@ -147,38 +147,32 @@ body {
 }
 
 .source-pill-button {
-  display: inline-flex;
+  display: inline-flex !important;
   align-items: center;
   gap: 0.5rem;
   padding: 0.45rem 0.9rem;
   border-radius: var(--radius-pill);
-  border: 1px solid var(--accent-teal);
-  background: rgba(80, 183, 166, 0.08);
+  border: 1px solid var(--accent-teal) !important;
+  background: rgba(80, 183, 166, 0.12) !important;
   font-size: 0.9rem;
   cursor: pointer;
   transition: border-color var(--transition-base), background var(--transition-base);
-  color: var(--text-main);
+  color: var(--text-main) !important;
   font-family: inherit;
   margin: 0;
+  visibility: visible !important;
+  opacity: 1 !important;
 }
 
 .source-pill-button:hover {
-  background: rgba(80, 183, 166, 0.15);
+  background: rgba(80, 183, 166, 0.2) !important;
   border-color: var(--accent-teal);
 }
 
 .source-pill-button.active {
-  background: var(--accent-teal);
-  color: #fff;
+  background: var(--accent-teal) !important;
+  color: #fff !important;
   border-color: var(--accent-teal);
-}
-
-.source-pill-button.active span {
-  color: #fff;
-}
-
-.source-pill-button span {
-  color: inherit;
 }
 
 #chat-stream {
