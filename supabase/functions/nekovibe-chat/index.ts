@@ -451,25 +451,23 @@ CRITICAL RULES:
 - Be specific, quantitative, and cite sources when possible
 - If the insights don't contain information relevant to the question, say so explicitly
 - Do NOT repeat the same generic answer - tailor your response to the specific question asked`
-    : `You are Nekovibe, an expert analyst summarizing what people say about Neko Health based on reviews, articles, and social posts.
+    : `You are Nekovibe, a factual data analyst reporting on Neko Health reviews. Be concise, precise, and number-focused.
 
 CRITICAL RULES:
-- Only use the provided summaries and snippets as ground truth
-- Do NOT invent details that are not in the data
-- Use summaries to describe overall patterns and trends
-- Use snippets as concrete examples (you can quote/paraphrase)
-- If the question is very specific and there is little or no data, say that explicitly
-- If the question targets one clinic, focus on that clinic first, then compare to others only if clearly present in data
-- NEVER make medical claims; you are only reflecting user feedback and public mentions
-- Be honest and balanced - mention both positive and negative feedback when present
+- Answer directly with facts and numbers. No fluff or filler.
+- Use ONLY the provided summaries and snippets as ground truth
+- Lead with numbers: "X of Y reviews (Z%)" or "X reviews mention..."
+- Keep responses under 100 words unless the question requires detail
+- Use bullet points for multiple data points
+- If targeting one clinic, state numbers for that clinic first
+- NEVER make medical claims; only report what reviews say
+- If data is insufficient, state: "Insufficient data: [what's missing]"
 
-QUANTITATIVE REPORTING REQUIREMENT:
-- When mentioning negative feedback, complaints, or specific issues, ALWAYS provide quantitative context
-- Format: "X out of Y reviews mentioned [issue]" or "X reviews (Y% of total) reported [issue]"
-- When citing specific problems, always state how many reviews mentioned it
-- Example: Instead of "Some users complained about wait times", say "15 out of 200 reviews (7.5%) mentioned long wait times"
-- If exact counts aren't available in summaries, estimate based on patterns or say "a small number" / "several" / "many" with context
-- Always provide the total review count when discussing percentages or proportions`;
+REQUIRED FORMAT:
+- Always include: total review count, specific counts, percentages
+- Example: "Marylebone: 45 of 200 reviews (22.5%) mention wait times. Spitalfields: 12 of 150 (8%)."
+- For trends: "Last 30 days: 23 complaints vs 8 in previous period (+187%)"
+- For ratings: "Average 4.2/5 (180 five-star, 45 four-star, 12 three-star, 3 two-star, 0 one-star)"`;
 
   // Build prompt based on whether it's articles-only or mixed
   let userMessage: string;
@@ -508,19 +506,18 @@ Context - Example Snippets (concrete examples):
 ${snippetsBlock || "No specific examples found."}
 
 Instructions:
-- Answer the question using ONLY the summaries and snippets above
-- Use summaries to describe overall patterns and trends
-- Use snippets as concrete examples (you can quote/paraphrase)
-- If the question targets specific clinics (${clinics.length ? clinics.join(", ") : "all clinics"}), prioritize those clinics
-- Be specific and quantitative when possible
-- If there's insufficient data, say so explicitly
+- Answer concisely with numbers first. Maximum 100 words unless detail is required.
+- Use ONLY the summaries and snippets above
+- Lead with: "[Clinic]: X of Y reviews (Z%) [finding]"
+- Use bullet points for multiple data points
+- If targeting specific clinics (${clinics.length ? clinics.join(", ") : "all clinics"}), provide numbers for each
+- If insufficient data: "Insufficient data: [what's missing]"
 
-QUANTITATIVE REQUIREMENT FOR NEGATIVE FEEDBACK:
-- When mentioning complaints, issues, or negative points, ALWAYS provide numbers
-- Format: "X out of Y reviews mentioned [issue]" or "X reviews (Y% of total) reported [issue]"
-- Example: "12 out of 200 reviews (6%) mentioned long wait times"
-- If exact numbers aren't in the data, estimate from patterns or provide context like "a small number of reviews" with the total count
-- Always include the total review count when discussing any negative feedback or specific issues`;
+FORMAT REQUIREMENTS:
+- Always include: total count, specific counts, percentages
+- Example: "Marylebone: 45/200 (22.5%) mention wait times. Spitalfields: 12/150 (8%)."
+- For trends: "Last 30 days: 23 complaints vs 8 previous (+187%)"
+- For ratings: "4.2/5 avg (180 five-star, 45 four-star, 12 three-star, 3 two-star, 0 one-star)"`;
   }
 
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
@@ -540,7 +537,7 @@ async function generateAnswerWithOpenAI(
     },
     body: JSON.stringify({
       model: openaiModel,
-      temperature: articlesOnly ? 0.5 : 0.3, // Higher temperature for articles-only to get more varied answers
+      temperature: articlesOnly ? 0.5 : 0.2, // Lower temperature for more factual, consistent responses
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: userMessage },

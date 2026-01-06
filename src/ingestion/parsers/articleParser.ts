@@ -148,6 +148,7 @@ function determineSource(explicitSource?: string, url?: string): string {
 
   const urlLower = url.toLowerCase();
 
+  if (urlLower.includes('linkedin.com')) return 'linkedin';
   if (urlLower.includes('blog') || urlLower.includes('/blog/')) return 'blog';
   if (urlLower.includes('press') || urlLower.includes('news') || urlLower.includes('/press/')) return 'press';
   if (urlLower.includes('article') || urlLower.includes('/article/')) return 'article';

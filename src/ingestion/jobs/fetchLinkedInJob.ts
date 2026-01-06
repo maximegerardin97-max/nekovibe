@@ -1,6 +1,6 @@
 /**
- * Articles/Blogs/Press Ingestion Job
- * Searches for and fetches articles, blog posts, and press mentions about Neko
+ * LinkedIn Ingestion Job
+ * Searches for and fetches LinkedIn posts about Neko Health
  */
 
 import { chromium, Browser, Page } from 'playwright';
@@ -11,16 +11,13 @@ import { parseArticle, RawArticleData } from '../parsers/articleParser';
 
 dotenv.config();
 
-export class FetchArticlesAndBlogsJob implements IngestionJob {
-  name = 'fetchArticlesAndBlogs';
+export class FetchLinkedInJob implements IngestionJob {
+  name = 'fetchLinkedIn';
 
   private browser: Browser | null = null;
   private readonly searchTerms = [
     'Neko Health',
     '"Neko Health"',
-    'Neko Health clinic',
-    'Neko Health veterinary',
-    'Neko Health vet',
   ];
 
   async run(): Promise<IngestionResult> {
@@ -30,7 +27,7 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       errors: [],
     };
 
-    console.log('Starting Articles/Blogs/Press ingestion...');
+    console.log('Starting LinkedIn ingestion...');
 
     try {
       this.browser = await chromium.launch({
@@ -38,33 +35,36 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
         args: ['--disable-blink-features=AutomationControlled'],
       });
 
-      const allArticles: RawArticleData[] = [];
+      const allPosts: RawArticleData[] = [];
 
       // Search using different search terms
       for (const searchTerm of this.searchTerms) {
-        console.log(`\nSearching for: "${searchTerm}"`);
-        const articles = await this.searchForArticles(searchTerm);
-        allArticles.push(...articles);
+        console.log(`\nSearching LinkedIn for: "${searchTerm}"`);
+        const posts = await this.searchLinkedIn(searchTerm);
+        allPosts.push(...posts);
       }
 
       // Deduplicate by URL
-      const uniqueArticles = this.deduplicateArticles(allArticles);
-      console.log(`\nFound ${uniqueArticles.length} unique articles`);
+      const uniquePosts = this.deduplicatePosts(allPosts);
+      console.log(`\nFound ${uniquePosts.length} unique LinkedIn posts`);
 
-      // Fetch full content for each article
-      for (const article of uniqueArticles) {
+      // Fetch full content for each post
+      for (const post of uniquePosts) {
         try {
-          const fullArticle = await this.fetchArticleContent(article);
-          if (!fullArticle) {
-            result.errors.push({ item: article.url, error: 'Failed to fetch content' });
+          const fullPost = await this.fetchPostContent(post);
+          if (!fullPost) {
+            result.errors.push({ item: post.url, error: 'Failed to fetch content' });
             continue;
           }
 
-          const parsed = parseArticle(fullArticle);
+          const parsed = parseArticle(fullPost);
           if (!parsed) {
-            result.errors.push({ item: article.url, error: 'Failed to parse article' });
+            result.errors.push({ item: post.url, error: 'Failed to parse post' });
             continue;
           }
+
+          // Override source to 'linkedin'
+          parsed.source = 'linkedin';
 
           const storeResult = await storeArticle(parsed);
           if (storeResult.stored) {
@@ -78,12 +78,12 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
           }
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-          result.errors.push({ item: article.url, error: errorMessage });
+          result.errors.push({ item: post.url, error: errorMessage });
         }
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Fatal error in Articles job:', errorMessage);
+      console.error('Fatal error in LinkedIn job:', errorMessage);
       result.errors.push({ item: 'job', error: errorMessage });
     } finally {
       if (this.browser) {
@@ -91,7 +91,7 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       }
     }
 
-    console.log(`\n✅ Articles/Blogs/Press ingestion complete:`);
+    console.log(`\n✅ LinkedIn ingestion complete:`);
     console.log(`   Added: ${result.added}`);
     console.log(`   Skipped: ${result.skipped}`);
     console.log(`   Errors: ${result.errors.length}`);
@@ -99,8 +99,8 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
     return result;
   }
 
-  private async searchForArticles(searchTerm: string): Promise<RawArticleData[]> {
-    const articles: RawArticleData[] = [];
+  private async searchLinkedIn(searchTerm: string): Promise<RawArticleData[]> {
+    const posts: RawArticleData[] = [];
 
     if (!this.browser) {
       throw new Error('Browser not initialized');
@@ -115,8 +115,8 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
     const page = await context.newPage();
 
     try {
-      // Use Google Search
-      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(searchTerm)}&tbm=nws`;
+      // Use Google Search to find LinkedIn posts
+      const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(`site:linkedin.com ${searchTerm}`)}`;
       console.log(`  Searching: ${searchUrl}`);
 
       await page.goto(searchUrl, { waitUntil: 'networkidle', timeout: 30000 });
@@ -125,25 +125,25 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       // Extract search results
       const resultElements = await page.locator('div[data-ved], .g, .tF2Cxc').all();
 
-      for (const element of resultElements.slice(0, 20)) {
-        // Limit to first 20 results per search term
+      for (const element of resultElements.slice(0, 30)) {
+        // Limit to first 30 results per search term
         try {
-          const articleData = await this.extractSearchResult(element);
-          if (articleData) {
-            articles.push(articleData);
+          const postData = await this.extractSearchResult(element);
+          if (postData && postData.url.includes('linkedin.com')) {
+            posts.push(postData);
           }
         } catch (error) {
           // Skip invalid results
         }
       }
     } catch (error) {
-      console.warn(`  Error searching for "${searchTerm}":`, error);
+      console.warn(`  Error searching LinkedIn for "${searchTerm}":`, error);
     } finally {
       await page.close();
       await context.close();
     }
 
-    return articles;
+    return posts;
   }
 
   private async extractSearchResult(element: any): Promise<RawArticleData | null> {
@@ -151,7 +151,7 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       // Extract URL
       const linkElement = element.locator('a[href^="http"]').first();
       const url = await linkElement.getAttribute('href').catch(() => null);
-      if (!url) return null;
+      if (!url || !url.includes('linkedin.com')) return null;
 
       // Extract title
       const titleElement = element.locator('h3, .LC20lb, .DKV0Md').first();
@@ -161,7 +161,7 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       const descElement = element.locator('.VwiC3b, .s, .st').first();
       const description = await descElement.textContent().catch(() => null) || '';
 
-      // Extract source/publication
+      // Extract author (usually in the source line for LinkedIn)
       const sourceElement = element.locator('.fG8Fp, .UPmit').first();
       const source = await sourceElement.textContent().catch(() => null) || '';
 
@@ -169,12 +169,22 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       const dateElement = element.locator('.fG8Fp, .f').last();
       const dateText = await dateElement.textContent().catch(() => null) || '';
 
+      // Try to extract author name from LinkedIn URL or source
+      let author: string | undefined;
+      const linkedinMatch = url.match(/linkedin\.com\/in\/([^\/]+)/);
+      if (linkedinMatch) {
+        author = linkedinMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+      } else if (source) {
+        author = source.split('·')[0]?.trim();
+      }
+
       return {
         externalId: url,
-        source: this.normalizeSource(source),
-        title: title.trim(),
+        source: 'linkedin',
+        title: title.trim() || 'LinkedIn Post',
         description: description.trim(),
         url,
+        author,
         publishedAt: this.parseDate(dateText),
       };
     } catch (error) {
@@ -182,7 +192,7 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
     }
   }
 
-  private async fetchArticleContent(article: RawArticleData): Promise<RawArticleData | null> {
+  private async fetchPostContent(post: RawArticleData): Promise<RawArticleData | null> {
     if (!this.browser) {
       throw new Error('Browser not initialized');
     }
@@ -190,28 +200,54 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
     const page = await this.browser.newPage();
 
     try {
-      console.log(`  Fetching: ${article.url}`);
-      await page.goto(article.url, { waitUntil: 'networkidle', timeout: 30000 });
-      await page.waitForTimeout(2000);
+      console.log(`  Fetching: ${post.url}`);
+      await page.goto(post.url, { waitUntil: 'networkidle', timeout: 30000 });
+      await page.waitForTimeout(3000); // LinkedIn needs more time to load
 
       // Get full HTML
       const html = await page.content();
 
-      // Try to extract author
+      // Try to extract author from page
+      let author = post.author;
       const authorSelectors = [
-        '[rel="author"]',
-        '.author',
-        '[class*="author"]',
-        '[itemprop="author"]',
+        '.feed-shared-actor__name',
+        '[data-control-name="actor"]',
+        '.pv-text-details__left-panel h1',
+        '.text-heading-xlarge',
       ];
 
-      let author: string | undefined;
       for (const selector of authorSelectors) {
         try {
           const authorElement = page.locator(selector).first();
-          if (await authorElement.isVisible({ timeout: 1000 })) {
-            author = await authorElement.textContent() || undefined;
-            if (author) break;
+          if (await authorElement.isVisible({ timeout: 2000 })) {
+            const authorText = await authorElement.textContent();
+            if (authorText) {
+              author = authorText.trim();
+              break;
+            }
+          }
+        } catch {
+          // Continue to next selector
+        }
+      }
+
+      // Try to extract post content
+      const contentSelectors = [
+        '.feed-shared-text',
+        '.feed-shared-update-v2__description',
+        '.feed-shared-text-view',
+        '[data-test-id="main-feed-activity-card"]',
+      ];
+
+      let content = post.description || '';
+      for (const selector of contentSelectors) {
+        try {
+          const contentElement = page.locator(selector).first();
+          if (await contentElement.isVisible({ timeout: 2000 })) {
+            const contentText = await contentElement.textContent();
+            if (contentText && contentText.length > content.length) {
+              content = contentText.trim();
+            }
           }
         } catch {
           // Continue to next selector
@@ -221,16 +257,15 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       // Try to extract published date from page
       const dateSelectors = [
         'time[datetime]',
-        '[itemprop="datePublished"]',
-        '[class*="date"]',
-        '[class*="published"]',
+        '.feed-shared-actor__sub-description time',
+        '.feed-shared-actor__sub-description',
       ];
 
-      let publishedAt = article.publishedAt;
+      let publishedAt = post.publishedAt;
       for (const selector of dateSelectors) {
         try {
           const dateElement = page.locator(selector).first();
-          if (await dateElement.isVisible({ timeout: 1000 })) {
+          if (await dateElement.isVisible({ timeout: 2000 })) {
             const dateAttr = await dateElement.getAttribute('datetime') || 
                            await dateElement.textContent() || '';
             if (dateAttr) {
@@ -247,41 +282,35 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       }
 
       return {
-        ...article,
+        ...post,
         html,
-        content: html, // Will be parsed by articleParser
+        content: content || html, // Will be parsed by articleParser
         author,
         publishedAt,
       };
     } catch (error) {
-      console.warn(`  Error fetching content from ${article.url}:`, error);
-      // Return article with basic info even if full fetch fails
-      return article;
+      console.warn(`  Error fetching content from ${post.url}:`, error);
+      // Return post with basic info even if full fetch fails
+      return post;
     } finally {
       await page.close();
     }
   }
 
-  private deduplicateArticles(articles: RawArticleData[]): RawArticleData[] {
+  private deduplicatePosts(posts: RawArticleData[]): RawArticleData[] {
     const seen = new Set<string>();
     const unique: RawArticleData[] = [];
 
-    for (const article of articles) {
-      const url = article.url.toLowerCase().split('?')[0]; // Remove query params for deduplication
+    for (const post of posts) {
+      // LinkedIn URLs can have query params, normalize them
+      const url = post.url.toLowerCase().split('?')[0].split('#')[0];
       if (!seen.has(url)) {
         seen.add(url);
-        unique.push(article);
+        unique.push(post);
       }
     }
 
     return unique;
-  }
-
-  private normalizeSource(source: string): string {
-    const lower = source.toLowerCase();
-    if (lower.includes('blog')) return 'blog';
-    if (lower.includes('press') || lower.includes('news')) return 'press';
-    return 'article';
   }
 
   private parseDate(dateText: string): Date | undefined {
@@ -292,6 +321,30 @@ export class FetchArticlesAndBlogsJob implements IngestionJob {
       const isoDate = new Date(dateText);
       if (!isNaN(isoDate.getTime())) {
         return isoDate;
+      }
+
+      // Try LinkedIn date formats like "2 days ago", "1 week ago", etc.
+      const relativeDateMatch = dateText.match(/(\d+)\s*(minute|hour|day|week|month|year)s?\s*ago/i);
+      if (relativeDateMatch) {
+        const amount = parseInt(relativeDateMatch[1]);
+        const unit = relativeDateMatch[2].toLowerCase();
+        const now = new Date();
+        
+        if (unit.includes('minute')) {
+          now.setMinutes(now.getMinutes() - amount);
+        } else if (unit.includes('hour')) {
+          now.setHours(now.getHours() - amount);
+        } else if (unit.includes('day')) {
+          now.setDate(now.getDate() - amount);
+        } else if (unit.includes('week')) {
+          now.setDate(now.getDate() - (amount * 7));
+        } else if (unit.includes('month')) {
+          now.setMonth(now.getMonth() - amount);
+        } else if (unit.includes('year')) {
+          now.setFullYear(now.getFullYear() - amount);
+        }
+        
+        return now;
       }
 
       // Try common date formats

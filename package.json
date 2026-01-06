@@ -8,6 +8,7 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "fetch:reviews": "ts-node scripts/fetch-google-reviews.ts",
     "fetch:articles": "ts-node scripts/fetch-articles.ts",
+    "fetch:linkedin": "ts-node scripts/fetch-linkedin.ts",
     "fetch:all": "ts-node scripts/fetch-all.ts",
     "schedule:reviews": "ts-node scripts/schedule-google-reviews.ts",
     "clean:reviews": "ts-node scripts/cleanup-unknown-clinic-reviews.ts",
