@@ -12,7 +12,9 @@ const corsHeaders = {
 };
 
 const gnewsApiKey = Deno.env.get("GNEWS_API_KEY") ?? "";
+const tavilyApiKey = Deno.env.get("TAVILY_API_KEY") ?? "";
 const gnewsApiUrl = "https://gnews.io/api/v4";
+const tavilyApiUrl = "https://api.tavily.com/search";
 const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -35,10 +37,6 @@ serve(async (req) => {
   }
 
   try {
-    if (!gnewsApiKey) {
-      return respond({ error: "GNEWS_API_KEY not configured" }, 400);
-    }
-
     if (!supabaseUrl || !supabaseServiceRoleKey) {
       return respond({ error: "Supabase credentials not configured" }, 500);
     }
@@ -54,39 +52,115 @@ serve(async (req) => {
     let totalAdded = 0;
     let totalSkipped = 0;
     const errors: string[] = [];
-    const allArticles: GNewsArticle[] = [];
+    const allArticles: any[] = [];
 
-    // Fetch articles for each search term
-    for (const searchTerm of searchTerms) {
-      console.log(`Searching GNews for: "${searchTerm}"`);
+    // Fetch from GNews (if available)
+    if (gnewsApiKey) {
+      for (const searchTerm of searchTerms) {
+        console.log(`Searching GNews for: "${searchTerm}"`);
 
-      try {
-        const params = new URLSearchParams({
-          q: searchTerm,
-          token: gnewsApiKey,
-          max: '50',
-          lang: 'en',
-          sortby: 'publishedAt',
-        });
+        try {
+          const params = new URLSearchParams({
+            q: searchTerm,
+            token: gnewsApiKey,
+            max: '50',
+            lang: 'en',
+            sortby: 'publishedAt',
+          });
 
-        const url = `${gnewsApiUrl}/search?${params.toString()}`;
-        const response = await fetch(url);
+          const url = `${gnewsApiUrl}/search?${params.toString()}`;
+          const response = await fetch(url);
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error(`GNews API error: ${response.status} ${errorText}`);
-          errors.push(`Failed to fetch "${searchTerm}": ${errorText}`);
-          continue;
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`GNews API error: ${response.status} ${errorText}`);
+            continue; // Don't add to errors, just skip
+          }
+
+          const data: any = await response.json();
+          const articles = data.articles || [];
+          console.log(`GNews found ${articles.length} articles for "${searchTerm}"`);
+          
+          // Convert GNews format to our format
+          allArticles.push(...articles.map((a: any) => ({
+            title: a.title,
+            description: a.description,
+            content: a.content || a.description,
+            url: a.url,
+            image: a.image,
+            publishedAt: a.publishedAt,
+            source: {
+              name: a.source?.name || 'Unknown',
+              url: a.source?.url || '',
+            },
+            provider: 'gnews',
+          })));
+        } catch (error) {
+          console.error(`Error fetching from GNews "${searchTerm}":`, error);
         }
-
-        const data: any = await response.json();
-        const articles = data.articles || [];
-        console.log(`Found ${articles.length} articles for "${searchTerm}"`);
-        allArticles.push(...articles);
-      } catch (error) {
-        console.error(`Error fetching "${searchTerm}":`, error);
-        errors.push(`Error fetching "${searchTerm}": ${error}`);
       }
+    }
+
+    // Fetch from Tavily (more comprehensive, no date restrictions)
+    if (tavilyApiKey) {
+      for (const searchTerm of searchTerms) {
+        console.log(`Searching Tavily for: "${searchTerm}"`);
+
+        try {
+          const query = `${searchTerm} news articles press blog posts`;
+          const response = await fetch(tavilyApiUrl, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              api_key: tavilyApiKey.trim(),
+              query: query,
+              search_depth: "advanced",
+              include_answer: false,
+              include_images: false,
+              include_raw_content: true,
+              max_results: 30,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`Tavily API error: ${response.status} ${errorText}`);
+            continue;
+          }
+
+          const data: any = await response.json();
+          const results = data.results || [];
+          
+          // Filter out LinkedIn (handled by fetch-linkedin function)
+          const nonLinkedInResults = results.filter((r: any) => 
+            r.url && !r.url.includes('linkedin.com')
+          );
+          
+          console.log(`Tavily found ${nonLinkedInResults.length} articles for "${searchTerm}"`);
+          
+          // Convert Tavily format to our format
+          allArticles.push(...nonLinkedInResults.map((r: any) => ({
+            title: r.title || 'Untitled',
+            description: r.content?.substring(0, 500) || '',
+            content: r.content || '',
+            url: r.url,
+            publishedAt: r.published_date || new Date().toISOString(),
+            source: {
+              name: r.author || new URL(r.url).hostname,
+              url: new URL(r.url).origin,
+            },
+            provider: 'tavily',
+          })));
+        } catch (error) {
+          console.error(`Error fetching from Tavily "${searchTerm}":`, error);
+        }
+      }
+    }
+
+    if (!gnewsApiKey && !tavilyApiKey) {
+      return respond({ error: "Neither GNEWS_API_KEY nor TAVILY_API_KEY configured" }, 400);
     }
 
     // Deduplicate by URL
@@ -140,6 +214,7 @@ serve(async (req) => {
           metadata: {
             image: article.image,
             source_url: article.source.url,
+            provider: article.provider || 'unknown',
           },
         });
 
