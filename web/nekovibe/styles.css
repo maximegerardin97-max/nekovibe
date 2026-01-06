@@ -550,6 +550,23 @@ button[type="submit"]:hover {
   position: relative;
 }
 
+.article-summary-cell {
+  max-width: 300px;
+  font-size: 0.9em;
+  color: var(--text-subtle);
+  line-height: 1.5;
+}
+
+.article-summary {
+  line-height: 1.5;
+}
+
+.text-muted {
+  color: var(--text-subtle);
+  font-style: italic;
+  font-size: 0.85em;
+}
+
 .comment-text,
 .comment-full {
   display: inline;
