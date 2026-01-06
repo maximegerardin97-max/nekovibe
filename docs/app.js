@@ -279,48 +279,58 @@ function initSupabaseClient() {
   return false;
 }
 
+// View switching - button next to Social
+let showingReviews = false;
+
+function setupViewToggle() {
+  const viewAllReviewsBtn = document.getElementById("view-all-reviews-btn");
+  const chatView = document.getElementById("chat-view");
+  const reviewsView = document.getElementById("reviews-view");
+  
+  if (!viewAllReviewsBtn || !chatView || !reviewsView) {
+    console.warn("View toggle elements not found");
+    return;
+  }
+  
+  viewAllReviewsBtn.addEventListener("click", () => {
+    showingReviews = !showingReviews;
+    
+    if (showingReviews) {
+      // Show reviews view
+      chatView.style.display = "none";
+      reviewsView.style.display = "block";
+      viewAllReviewsBtn.classList.add("active");
+      viewAllReviewsBtn.textContent = "Back to Chat";
+      
+      // Load reviews data
+      if (typeof loadClinics === "function") loadClinics();
+      if (typeof loadReviews === "function") loadReviews();
+    } else {
+      // Show chat view
+      chatView.style.display = "block";
+      reviewsView.style.display = "none";
+      viewAllReviewsBtn.classList.remove("active");
+      viewAllReviewsBtn.textContent = "View All Reviews";
+    }
+  });
+}
+
 // Try to initialize immediately, or wait for DOMContentLoaded
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
+    setupViewToggle();
     initSupabaseClient();
     setupReviewsView();
   });
 } else {
-  // DOM already loaded, wait a bit for supabase script to load
+  // DOM already loaded, set up view toggle immediately
+  setupViewToggle();
+  // Wait a bit for supabase script to load
   setTimeout(() => {
     initSupabaseClient();
     setupReviewsView();
   }, 100);
 }
-
-// View switching - button next to Social
-const viewAllReviewsBtn = document.getElementById("view-all-reviews-btn");
-const chatView = document.getElementById("chat-view");
-const reviewsView = document.getElementById("reviews-view");
-
-let showingReviews = false;
-
-viewAllReviewsBtn?.addEventListener("click", () => {
-  showingReviews = !showingReviews;
-  
-  if (showingReviews) {
-    // Show reviews view
-    chatView.style.display = "none";
-    reviewsView.style.display = "block";
-    viewAllReviewsBtn.classList.add("active");
-    viewAllReviewsBtn.textContent = "Back to Chat";
-    
-    // Load reviews data
-    if (typeof loadClinics === "function") loadClinics();
-    if (typeof loadReviews === "function") loadReviews();
-  } else {
-    // Show chat view
-    chatView.style.display = "block";
-    reviewsView.style.display = "none";
-    viewAllReviewsBtn.classList.remove("active");
-    viewAllReviewsBtn.textContent = "View All Reviews";
-  }
-});
 
 // Reviews state
 const reviewsState = {
