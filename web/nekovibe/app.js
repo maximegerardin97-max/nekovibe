@@ -663,7 +663,7 @@ function updateArticlesTable(articles, errorMessage) {
       const summary = article.metadata?.summary || article.description || "";
       const summaryDisplay = summary 
         ? `<div class="article-summary">${escapeHtml(summary.substring(0, 200))}${summary.length > 200 ? "..." : ""}</div>`
-        : "<span class="text-muted">No summary available</span>";
+        : '<span class="text-muted">No summary available</span>';
       
       return `
         <tr>
