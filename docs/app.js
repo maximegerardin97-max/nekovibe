@@ -549,13 +549,13 @@ async function loadArticles() {
   const countSpan = document.getElementById("articles-count");
   
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading articles...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="loading-state">Loading articles...</td></tr>';
   }
   
   try {
     let query = supabaseClient
       .from("articles")
-      .select("published_at, source, title, author, url", { count: "exact" });
+      .select("published_at, source, title, author, url, description, metadata", { count: "exact" });
     
     // Apply filters
     if (articlesState.filters.source) {
@@ -629,12 +629,12 @@ function updateArticlesTable(articles, errorMessage) {
   if (!tbody) return;
   
   if (errorMessage) {
-    tbody.innerHTML = `<tr><td colspan="4" class="error-state">${errorMessage}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="error-state">${errorMessage}</td></tr>`;
     return;
   }
   
   if (articles.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No articles found matching your filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No articles found matching your filters.</td></tr>';
     return;
   }
   
@@ -647,17 +647,31 @@ function updateArticlesTable(articles, errorMessage) {
             day: "numeric",
           })
         : "N/A";
-      const source = article.source || "Unknown";
+      
+      // Format source with post type for LinkedIn
+      let sourceDisplay = article.source || "Unknown";
+      if (article.source === "linkedin" && article.metadata?.post_type) {
+        const postType = article.metadata.post_type === "company_post" ? "Company" : "Organic";
+        sourceDisplay = `LinkedIn (${postType})`;
+      }
+      
       const title = article.title || "Untitled";
       const author = article.author || "Unknown";
       const url = article.url || "#";
       
+      // Get summary from metadata
+      const summary = article.metadata?.summary || article.description || "";
+      const summaryDisplay = summary 
+        ? `<div class="article-summary">${escapeHtml(summary.substring(0, 200))}${summary.length > 200 ? "..." : ""}</div>`
+        : "<span class="text-muted">No summary available</span>";
+      
       return `
         <tr>
           <td class="review-date">${date}</td>
-          <td class="review-clinic">${escapeHtml(source)}</td>
+          <td class="review-clinic">${escapeHtml(sourceDisplay)}</td>
           <td class="review-comment"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a></td>
           <td class="review-clinic">${escapeHtml(author)}</td>
+          <td class="article-summary-cell">${summaryDisplay}</td>
         </tr>
       `;
     })
