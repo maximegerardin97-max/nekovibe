@@ -101,10 +101,13 @@ serve(async (req) => {
           // Determine if it's a company post or organic post
           const postType = categorizeLinkedInPost(r.url, authorName, r.content);
           
+          // Parse and validate date from Tavily
+          const publishedDate = r.published_date ? parseDate(r.published_date) : null;
+          
           return {
             title: r.title || 'LinkedIn Post',
             url: r.url,
-            published_date: parseDate(r.published_date),
+            published_date: publishedDate, // Keep as Date object for now
             author: authorName,
             content: r.content || '',
             post_type: postType,
@@ -164,7 +167,7 @@ serve(async (req) => {
           description: post.content?.substring(0, 500) || '',
           url: post.url,
           author: post.author || undefined,
-          published_at: post.published_date ? post.published_date.toISOString() : null,
+          published_at: post.published_date ? (post.published_date instanceof Date ? post.published_date.toISOString() : new Date(post.published_date).toISOString()) : null,
           content: fullContent,
           metadata: {
             post_type: post.post_type, // 'company_post' or 'organic_post'
@@ -200,14 +203,76 @@ serve(async (req) => {
 
 function parseDate(dateStr: string | null | undefined): Date | null {
   if (!dateStr) return null;
+  
   try {
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date;
+    // Try ISO format first (most common)
+    const isoDate = new Date(dateStr);
+    if (!isNaN(isoDate.getTime()) && isoDate.getFullYear() > 2000) {
+      return isoDate;
     }
   } catch {
-    // Invalid date
+    // Continue to other formats
   }
+  
+  try {
+    // Try parsing as timestamp
+    const timestamp = Date.parse(dateStr);
+    if (!isNaN(timestamp)) {
+      const date = new Date(timestamp);
+      if (date.getFullYear() > 2000) {
+        return date;
+      }
+    }
+  } catch {
+    // Continue
+  }
+  
+  // Try common date formats
+  const dateFormats = [
+    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
+    /(\d{2})\/(\d{2})\/(\d{4})/, // MM/DD/YYYY
+    /(\d{2})\/(\d{2})\/(\d{2})/, // MM/DD/YY
+  ];
+  
+  for (const format of dateFormats) {
+    const match = dateStr.match(format);
+    if (match) {
+      try {
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+          return date;
+        }
+      } catch {
+        // Continue
+      }
+    }
+  }
+  
+  // Try relative dates (e.g., "2 days ago", "1 week ago")
+  const relativeMatch = dateStr.match(/(\d+)\s*(minute|hour|day|week|month|year)s?\s*ago/i);
+  if (relativeMatch) {
+    const amount = parseInt(relativeMatch[1]);
+    const unit = relativeMatch[2].toLowerCase();
+    const now = new Date();
+    
+    if (unit.includes('minute')) {
+      now.setMinutes(now.getMinutes() - amount);
+    } else if (unit.includes('hour')) {
+      now.setHours(now.getHours() - amount);
+    } else if (unit.includes('day')) {
+      now.setDate(now.getDate() - amount);
+    } else if (unit.includes('week')) {
+      now.setDate(now.getDate() - (amount * 7));
+    } else if (unit.includes('month')) {
+      now.setMonth(now.getMonth() - amount);
+    } else if (unit.includes('year')) {
+      now.setFullYear(now.getFullYear() - amount);
+    }
+    
+    return now;
+  }
+  
+  console.warn(`Could not parse date: ${dateStr}`);
   return null;
 }
 

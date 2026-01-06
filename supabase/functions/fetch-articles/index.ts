@@ -84,19 +84,24 @@ serve(async (req) => {
           console.log(`GNews found ${articles.length} articles for "${searchTerm}"`);
           
           // Convert GNews format to our format
-          allArticles.push(...articles.map((a: any) => ({
-            title: a.title,
-            description: a.description,
-            content: a.content || a.description,
-            url: a.url,
-            image: a.image,
-            publishedAt: a.publishedAt,
-            source: {
-              name: a.source?.name || 'Unknown',
-              url: a.source?.url || '',
-            },
-            provider: 'gnews',
-          })));
+          allArticles.push(...articles.map((a: any) => {
+            // Parse and validate date from GNews
+            const publishedDate = a.publishedAt ? parseDate(a.publishedAt) : null;
+            
+            return {
+              title: a.title,
+              description: a.description,
+              content: a.content || a.description,
+              url: a.url,
+              image: a.image,
+              publishedAt: publishedDate ? publishedDate.toISOString() : null,
+              source: {
+                name: a.source?.name || 'Unknown',
+                url: a.source?.url || '',
+              },
+              provider: 'gnews',
+            };
+          }));
         } catch (error) {
           console.error(`Error fetching from GNews "${searchTerm}":`, error);
         }
@@ -143,18 +148,23 @@ serve(async (req) => {
           console.log(`Tavily found ${nonLinkedInResults.length} articles for "${searchTerm}"`);
           
           // Convert Tavily format to our format
-          allArticles.push(...nonLinkedInResults.map((r: any) => ({
-            title: r.title || 'Untitled',
-            description: r.content?.substring(0, 500) || '',
-            content: r.content || '', // Full content from Tavily
-            url: r.url,
-            publishedAt: parseDate(r.published_date) || null,
-            source: {
-              name: r.author || extractDomainName(r.url),
-              url: new URL(r.url).origin,
-            },
-            provider: 'tavily',
-          })));
+          allArticles.push(...nonLinkedInResults.map((r: any) => {
+            // Parse and validate date from Tavily
+            const publishedDate = r.published_date ? parseDate(r.published_date) : null;
+            
+            return {
+              title: r.title || 'Untitled',
+              description: r.content?.substring(0, 500) || '',
+              content: r.content || '', // Full content from Tavily
+              url: r.url,
+              publishedAt: publishedDate ? publishedDate.toISOString() : null,
+              source: {
+                name: r.author || extractDomainName(r.url),
+                url: new URL(r.url).origin,
+              },
+              provider: 'tavily',
+            };
+          }));
         } catch (error) {
           console.error(`Error fetching from Tavily "${searchTerm}":`, error);
         }
@@ -223,7 +233,7 @@ serve(async (req) => {
           description: article.description || '',
           url: article.url,
           author: article.source.name,
-          published_at: article.publishedAt ? parseDate(article.publishedAt)?.toISOString() || null : null,
+          published_at: article.publishedAt || null,
           content: fullContent,
           metadata: {
             image: article.image,
@@ -261,14 +271,76 @@ serve(async (req) => {
 
 function parseDate(dateStr: string | null | undefined): Date | null {
   if (!dateStr) return null;
+  
   try {
-    const date = new Date(dateStr);
-    if (!isNaN(date.getTime())) {
-      return date;
+    // Try ISO format first (most common)
+    const isoDate = new Date(dateStr);
+    if (!isNaN(isoDate.getTime()) && isoDate.getFullYear() > 2000) {
+      return isoDate;
     }
   } catch {
-    // Invalid date
+    // Continue to other formats
   }
+  
+  try {
+    // Try parsing as timestamp
+    const timestamp = Date.parse(dateStr);
+    if (!isNaN(timestamp)) {
+      const date = new Date(timestamp);
+      if (date.getFullYear() > 2000) {
+        return date;
+      }
+    }
+  } catch {
+    // Continue
+  }
+  
+  // Try common date formats
+  const dateFormats = [
+    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
+    /(\d{2})\/(\d{2})\/(\d{4})/, // MM/DD/YYYY
+    /(\d{2})\/(\d{2})\/(\d{2})/, // MM/DD/YY
+  ];
+  
+  for (const format of dateFormats) {
+    const match = dateStr.match(format);
+    if (match) {
+      try {
+        const date = new Date(dateStr);
+        if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+          return date;
+        }
+      } catch {
+        // Continue
+      }
+    }
+  }
+  
+  // Try relative dates (e.g., "2 days ago", "1 week ago")
+  const relativeMatch = dateStr.match(/(\d+)\s*(minute|hour|day|week|month|year)s?\s*ago/i);
+  if (relativeMatch) {
+    const amount = parseInt(relativeMatch[1]);
+    const unit = relativeMatch[2].toLowerCase();
+    const now = new Date();
+    
+    if (unit.includes('minute')) {
+      now.setMinutes(now.getMinutes() - amount);
+    } else if (unit.includes('hour')) {
+      now.setHours(now.getHours() - amount);
+    } else if (unit.includes('day')) {
+      now.setDate(now.getDate() - amount);
+    } else if (unit.includes('week')) {
+      now.setDate(now.getDate() - (amount * 7));
+    } else if (unit.includes('month')) {
+      now.setMonth(now.getMonth() - amount);
+    } else if (unit.includes('year')) {
+      now.setFullYear(now.getFullYear() - amount);
+    }
+    
+    return now;
+  }
+  
+  console.warn(`Could not parse date: ${dateStr}`);
   return null;
 }
 
