@@ -1,7 +1,6 @@
 const chatStream = document.getElementById("chat-stream");
 const form = document.getElementById("ask-form");
 const textarea = document.getElementById("prompt");
-const sourceInputs = Array.from(document.querySelectorAll('input[name="sources"]'));
 const functionUrl = document.body.dataset.functionUrl || "";
 const functionKey = document.body.dataset.apikey || "";
 
@@ -20,7 +19,8 @@ form.addEventListener("submit", async (event) => {
     return;
   }
 
-  const sources = sourceInputs.filter((input) => input.checked && !input.disabled).map((input) => input.value);
+  // Neko chat uses all sources by default
+  const sources = ["reviews", "articles"];
 
   appendMessage({ role: "user", content: prompt });
   textarea.value = "";
@@ -283,10 +283,12 @@ function initSupabaseClient() {
 function setupTabSwitching() {
   const tabChat = document.getElementById("tab-chat");
   const tabReviews = document.getElementById("tab-reviews");
+  const tabArticles = document.getElementById("tab-articles");
   const chatView = document.getElementById("chat-view");
   const reviewsView = document.getElementById("reviews-view");
+  const articlesView = document.getElementById("articles-view");
   
-  if (!tabChat || !tabReviews || !chatView || !reviewsView) {
+  if (!tabChat || !tabReviews || !tabArticles || !chatView || !reviewsView || !articlesView) {
     console.warn("Tab elements not found");
     return;
   }
@@ -295,10 +297,12 @@ function setupTabSwitching() {
     // Update button states
     tabChat.classList.remove("active");
     tabReviews.classList.remove("active");
+    tabArticles.classList.remove("active");
     
     // Hide all views
     chatView.classList.remove("active");
     reviewsView.classList.remove("active");
+    articlesView.classList.remove("active");
     
     if (tabName === "chat") {
       tabChat.classList.add("active");
@@ -310,11 +314,21 @@ function setupTabSwitching() {
       // Load reviews data when switching to reviews tab
       if (typeof loadClinics === "function") loadClinics();
       if (typeof loadReviews === "function") loadReviews();
+    } else if (tabName === "articles") {
+      tabArticles.classList.add("active");
+      articlesView.classList.add("active");
+      
+      // Load articles data when switching to articles tab
+      if (typeof loadArticles === "function") loadArticles();
     }
   }
   
   tabChat.addEventListener("click", () => switchToTab("chat"));
   tabReviews.addEventListener("click", () => switchToTab("reviews"));
+  tabArticles.addEventListener("click", () => switchToTab("articles"));
+  
+  // Default to reviews tab
+  switchToTab("reviews");
 }
 
 // Setup reviews chat (same as main chat but always uses reviews source)
@@ -397,6 +411,86 @@ function setupReviewsChat() {
   });
 }
 
+// Setup articles chat (same as reviews chat but always uses articles source)
+function setupArticlesChat() {
+  const articlesChatStream = document.getElementById("articles-chat-stream");
+  const articlesForm = document.getElementById("articles-ask-form");
+  const articlesTextarea = document.getElementById("articles-prompt");
+  
+  if (!articlesChatStream || !articlesForm || !articlesTextarea) {
+    console.warn("Articles chat elements not found");
+    return;
+  }
+  
+  const articlesChatState = {
+    messages: [],
+    pending: false,
+  };
+  
+  articlesForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (articlesChatState.pending) return;
+    
+    const prompt = articlesTextarea.value.trim();
+    if (!prompt) {
+      articlesTextarea.focus();
+      return;
+    }
+    
+    // Always use articles source for articles chat
+    const sources = ["articles"];
+    
+    appendMessageToStream(articlesChatStream, { role: "user", content: prompt });
+    articlesTextarea.value = "";
+    
+    const loadingId = appendMessageToStream(articlesChatStream, { role: "assistant", content: "Thinking…" }, true);
+    articlesChatState.pending = true;
+    
+    try {
+      const headers = { "Content-Type": "application/json" };
+      if (functionKey) {
+        headers.apikey = functionKey;
+        headers.Authorization = `Bearer ${functionKey}`;
+      }
+      
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ prompt, sources }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      
+      const data = await response.json();
+      
+      replaceMessageInStream(articlesChatStream, loadingId, { 
+        role: "assistant", 
+        content: data.answer ?? "No answer returned.",
+        prompt: prompt,
+        sources: sources
+      });
+    } catch (error) {
+      console.error("articles chat error", error);
+      replaceMessageInStream(articlesChatStream, loadingId, {
+        role: "assistant",
+        content: "I couldn't reach Nekovibe right now. Please try again.",
+      });
+    } finally {
+      articlesChatState.pending = false;
+      articlesTextarea.focus();
+    }
+  });
+  
+  articlesTextarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      articlesForm.requestSubmit();
+    }
+  });
+}
+
 // Helper functions for reviews chat stream
 function appendMessageToStream(stream, message, isTemporary = false) {
   const bubble = document.createElement("div");
@@ -432,22 +526,219 @@ function replaceMessageInStream(stream, messageId, newMessage) {
   delete bubble.dataset.messageId;
 }
 
+// Articles state
+const articlesState = {
+  currentPage: 1,
+  pageSize: 50,
+  filters: {
+    source: "",
+    dateFrom: "",
+    dateTo: "",
+    text: "",
+  },
+};
+
+// Load articles with filters
+async function loadArticles() {
+  if (!supabaseClient) {
+    updateArticlesTable([], "Supabase client not initialized. Please check your configuration.");
+    return;
+  }
+  
+  const tbody = document.getElementById("articles-tbody");
+  const countSpan = document.getElementById("articles-count");
+  
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading articles...</td></tr>';
+  }
+  
+  try {
+    let query = supabaseClient
+      .from("articles")
+      .select("published_at, source, title, author, url", { count: "exact" });
+    
+    // Apply filters
+    if (articlesState.filters.source) {
+      query = query.eq("source", articlesState.filters.source);
+    }
+    
+    if (articlesState.filters.dateFrom) {
+      query = query.gte("published_at", articlesState.filters.dateFrom);
+    }
+    
+    if (articlesState.filters.dateTo) {
+      const endDate = new Date(articlesState.filters.dateTo);
+      endDate.setDate(endDate.getDate() + 1);
+      query = query.lt("published_at", endDate.toISOString().split("T")[0]);
+    }
+    
+    if (articlesState.filters.text) {
+      query = query.or(`title.ilike.%${articlesState.filters.text}%,content.ilike.%${articlesState.filters.text}%`);
+    }
+    
+    // Order by date (newest first)
+    query = query.order("published_at", { ascending: false });
+    
+    // Pagination
+    const from = (articlesState.currentPage - 1) * articlesState.pageSize;
+    const to = from + articlesState.pageSize - 1;
+    query = query.range(from, to);
+    
+    const { data, error, count } = await query;
+    
+    if (error) throw error;
+    
+    // Update count
+    if (countSpan) {
+      const total = count || 0;
+      const start = total > 0 ? from + 1 : 0;
+      const end = Math.min(from + articlesState.pageSize, total);
+      countSpan.textContent = `Showing ${start}-${end} of ${total} articles`;
+    }
+    
+    // Update pagination buttons
+    const prevPageBtn = document.getElementById("prev-article-page");
+    const nextPageBtn = document.getElementById("next-article-page");
+    
+    if (prevPageBtn) {
+      prevPageBtn.disabled = articlesState.currentPage === 1;
+    }
+    if (nextPageBtn) {
+      const total = count || 0;
+      const maxPage = Math.ceil(total / articlesState.pageSize);
+      nextPageBtn.disabled = articlesState.currentPage >= maxPage;
+    }
+    
+    // Update page info
+    const pageInfo = document.getElementById("article-page-info");
+    if (pageInfo) {
+      const total = count || 0;
+      const maxPage = Math.ceil(total / articlesState.pageSize);
+      pageInfo.textContent = `Page ${articlesState.currentPage} of ${maxPage || 1}`;
+    }
+    
+    updateArticlesTable(data || [], null);
+  } catch (error) {
+    console.error("Error loading articles:", error);
+    updateArticlesTable([], `Error loading articles: ${error.message}`);
+  }
+}
+
+function updateArticlesTable(articles, errorMessage) {
+  const tbody = document.getElementById("articles-tbody");
+  if (!tbody) return;
+  
+  if (errorMessage) {
+    tbody.innerHTML = `<tr><td colspan="4" class="error-state">${errorMessage}</td></tr>`;
+    return;
+  }
+  
+  if (articles.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No articles found matching your filters.</td></tr>';
+    return;
+  }
+  
+  tbody.innerHTML = articles
+    .map((article) => {
+      const date = article.published_at
+        ? new Date(article.published_at).toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })
+        : "N/A";
+      const source = article.source || "Unknown";
+      const title = article.title || "Untitled";
+      const author = article.author || "Unknown";
+      const url = article.url || "#";
+      
+      return `
+        <tr>
+          <td class="review-date">${date}</td>
+          <td class="review-clinic">${escapeHtml(source)}</td>
+          <td class="review-comment"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a></td>
+          <td class="review-clinic">${escapeHtml(author)}</td>
+        </tr>
+      `;
+    })
+    .join("");
+}
+
+// Setup articles view functionality
+function setupArticlesView() {
+  const filterSource = document.getElementById("filter-article-source");
+  const filterDateFrom = document.getElementById("filter-article-date-from");
+  const filterDateTo = document.getElementById("filter-article-date-to");
+  const filterText = document.getElementById("filter-article-text");
+  const applyFiltersBtn = document.getElementById("apply-article-filters");
+  const clearFiltersBtn = document.getElementById("clear-article-filters");
+  
+  applyFiltersBtn?.addEventListener("click", () => {
+    articlesState.filters = {
+      source: filterSource?.value || "",
+      dateFrom: filterDateFrom?.value || "",
+      dateTo: filterDateTo?.value || "",
+      text: filterText?.value || "",
+    };
+    articlesState.currentPage = 1;
+    loadArticles();
+  });
+  
+  clearFiltersBtn?.addEventListener("click", () => {
+    if (filterSource) filterSource.value = "";
+    if (filterDateFrom) filterDateFrom.value = "";
+    if (filterDateTo) filterDateTo.value = "";
+    if (filterText) filterText.value = "";
+    articlesState.filters = {
+      source: "",
+      dateFrom: "",
+      dateTo: "",
+      text: "",
+    };
+    articlesState.currentPage = 1;
+    loadArticles();
+  });
+  
+  // Pagination
+  const prevPageBtn = document.getElementById("prev-article-page");
+  const nextPageBtn = document.getElementById("next-article-page");
+  
+  prevPageBtn?.addEventListener("click", () => {
+    if (articlesState.currentPage > 1) {
+      articlesState.currentPage--;
+      loadArticles();
+    }
+  });
+  
+  nextPageBtn?.addEventListener("click", () => {
+    articlesState.currentPage++;
+    loadArticles();
+  });
+  
+  // Make loadArticles available globally
+  window.loadArticles = loadArticles;
+}
+
 // Try to initialize immediately, or wait for DOMContentLoaded
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
     setupTabSwitching();
     setupReviewsChat();
+    setupArticlesChat();
     initSupabaseClient();
     setupReviewsView();
+    setupArticlesView();
   });
 } else {
   // DOM already loaded
   setupTabSwitching();
   setupReviewsChat();
+  setupArticlesChat();
   // Wait a bit for supabase script to load
   setTimeout(() => {
     initSupabaseClient();
     setupReviewsView();
+    setupArticlesView();
   }, 100);
 }
 

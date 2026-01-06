@@ -22,30 +22,24 @@
           </p>
         </div>
         <div class="source-switcher" role="group" aria-label="Knowledge sources">
-          <button id="tab-chat" class="source-pill-button tab-button active" type="button">
-            Chat
+          <button id="tab-chat" class="source-pill-button tab-button" type="button">
+            Neko chat
           </button>
-          <button id="tab-reviews" class="source-pill-button tab-button" type="button">
+          <button id="tab-reviews" class="source-pill-button tab-button active" type="button">
             Neko reviews
           </button>
-          <label class="source-pill">
-            <input type="checkbox" value="articles" name="sources" />
-            <span>Articles / Press</span>
-          </label>
-          <label class="source-pill disabled">
-            <input type="checkbox" value="social" name="sources" disabled />
-            <span>Social</span>
-          </label>
+          <button id="tab-articles" class="source-pill-button tab-button" type="button">
+            Articles / Press
+          </button>
         </div>
       </header>
 
       <main>
-        <!-- Chat View -->
-        <div id="chat-view" class="tab-content active">
+        <!-- Neko Chat View (General) -->
+        <div id="chat-view" class="tab-content">
           <section id="chat-stream" aria-live="polite">
             <div class="empty-state">
-              <p>Try "What do patients say about the Covent Garden clinic?"</p>
-              <p>or "Summarize top concerns from the last 30 days".</p>
+              <p>Ask anything about Neko Health</p>
             </div>
           </section>
 
@@ -55,7 +49,7 @@
                 name="prompt"
                 id="prompt"
                 rows="3"
-                placeholder="Ask anything…"
+                placeholder="Ask anything about Neko Health…"
                 autocomplete="off"
               ></textarea>
               <button type="submit" aria-label="Send">
@@ -66,7 +60,7 @@
         </div>
 
         <!-- Neko Reviews View (Combined Reviews + Chat) -->
-        <div id="reviews-view" class="tab-content">
+        <div id="reviews-view" class="tab-content active">
           <div class="reviews-combined-layout">
             <!-- Top: Chat -->
             <div class="reviews-chat-section">
@@ -160,6 +154,98 @@
                 <button id="prev-page" class="pagination-btn" disabled>Previous</button>
                 <span id="page-info">Page 1</span>
                 <button id="next-page" class="pagination-btn">Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Articles / Press View (Combined Articles + Chat) -->
+        <div id="articles-view" class="tab-content">
+          <div class="reviews-combined-layout">
+            <!-- Top: Chat -->
+            <div class="reviews-chat-section">
+              <section id="articles-chat-stream" aria-live="polite">
+                <div class="empty-state">
+                  <p>What do you want to know about the articles and press?</p>
+                </div>
+              </section>
+
+              <form id="articles-ask-form">
+                <div class="input-wrapper">
+                  <textarea
+                    name="articles-prompt"
+                    id="articles-prompt"
+                    rows="3"
+                    placeholder="Ask anything about articles and press…"
+                    autocomplete="off"
+                  ></textarea>
+                  <button type="submit" aria-label="Send">
+                    <span>Send</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <!-- Bottom: Articles Table with Filters -->
+            <div class="reviews-container">
+              <!-- Filters -->
+              <div class="reviews-filters">
+                <div class="filter-group">
+                  <label for="filter-article-source">Source</label>
+                  <select id="filter-article-source">
+                    <option value="">All Sources</option>
+                    <option value="blog">Blog</option>
+                    <option value="press">Press</option>
+                    <option value="article">Article</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="filter-article-date-from">Date From</label>
+                  <input type="date" id="filter-article-date-from" />
+                </div>
+                <div class="filter-group">
+                  <label for="filter-article-date-to">Date To</label>
+                  <input type="date" id="filter-article-date-to" />
+                </div>
+                <div class="filter-group filter-group-wide">
+                  <label for="filter-article-text">Search Title/Content</label>
+                  <input type="text" id="filter-article-text" placeholder="Search in title or content..." />
+                </div>
+                <div class="filter-actions">
+                  <button id="apply-article-filters" class="filter-btn">Apply Filters</button>
+                  <button id="clear-article-filters" class="filter-btn filter-btn-secondary">Clear</button>
+                </div>
+              </div>
+
+              <!-- Results Info -->
+              <div class="reviews-info">
+                <span id="articles-count">Loading articles...</span>
+              </div>
+
+              <!-- Articles Table -->
+              <div class="reviews-table-container">
+                <table class="reviews-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Source</th>
+                      <th>Title</th>
+                      <th>Author</th>
+                    </tr>
+                  </thead>
+                  <tbody id="articles-tbody">
+                    <tr>
+                      <td colspan="4" class="loading-state">Loading articles...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Pagination -->
+              <div class="reviews-pagination">
+                <button id="prev-article-page" class="pagination-btn" disabled>Previous</button>
+                <span id="article-page-info">Page 1</span>
+                <button id="next-article-page" class="pagination-btn">Next</button>
               </div>
             </div>
           </div>
