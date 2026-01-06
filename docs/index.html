@@ -68,81 +68,8 @@
         <!-- Neko Reviews View (Combined Reviews + Chat) -->
         <div id="reviews-view" class="tab-content">
           <div class="reviews-combined-layout">
-            <!-- Left side: Reviews Table -->
-            <div class="reviews-sidebar">
-              <div class="reviews-container">
-                <!-- Filters -->
-                <div class="reviews-filters">
-                  <div class="filter-group">
-                    <label for="filter-clinic">Clinic</label>
-                    <select id="filter-clinic">
-                      <option value="">All Clinics</option>
-                    </select>
-                  </div>
-                  <div class="filter-group">
-                    <label for="filter-rating">Rating</label>
-                    <select id="filter-rating">
-                      <option value="">All Ratings</option>
-                      <option value="5">5 Stars</option>
-                      <option value="4">4 Stars</option>
-                      <option value="3">3 Stars</option>
-                      <option value="2">2 Stars</option>
-                      <option value="1">1 Star</option>
-                    </select>
-                  </div>
-                  <div class="filter-group">
-                    <label for="filter-date-from">Date From</label>
-                    <input type="date" id="filter-date-from" />
-                  </div>
-                  <div class="filter-group">
-                    <label for="filter-date-to">Date To</label>
-                    <input type="date" id="filter-date-to" />
-                  </div>
-                  <div class="filter-group filter-group-wide">
-                    <label for="filter-comment">Search Comment</label>
-                    <input type="text" id="filter-comment" placeholder="Search in review text..." />
-                  </div>
-                  <div class="filter-actions">
-                    <button id="apply-filters" class="filter-btn">Apply Filters</button>
-                    <button id="clear-filters" class="filter-btn filter-btn-secondary">Clear</button>
-                  </div>
-                </div>
-
-                <!-- Results Info -->
-                <div class="reviews-info">
-                  <span id="reviews-count">Loading reviews...</span>
-                </div>
-
-                <!-- Reviews Table -->
-                <div class="reviews-table-container">
-                  <table class="reviews-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Rating</th>
-                        <th>Clinic</th>
-                        <th>Comment</th>
-                      </tr>
-                    </thead>
-                    <tbody id="reviews-tbody">
-                      <tr>
-                        <td colspan="4" class="loading-state">Loading reviews...</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                <!-- Pagination -->
-                <div class="reviews-pagination">
-                  <button id="prev-page" class="pagination-btn" disabled>Previous</button>
-                  <span id="page-info">Page 1</span>
-                  <button id="next-page" class="pagination-btn">Next</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Right side: Chat -->
-            <div class="reviews-chat-sidebar">
+            <!-- Top: Chat -->
+            <div class="reviews-chat-section">
               <section id="reviews-chat-stream" aria-live="polite">
                 <div class="empty-state">
                   <p>What do you want to know about the reviews?</p>
@@ -163,6 +90,77 @@
                   </button>
                 </div>
               </form>
+            </div>
+
+            <!-- Bottom: Reviews Table with Filters -->
+            <div class="reviews-container">
+              <!-- Filters -->
+              <div class="reviews-filters">
+                <div class="filter-group">
+                  <label for="filter-clinic">Clinic</label>
+                  <select id="filter-clinic">
+                    <option value="">All Clinics</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="filter-rating">Rating</label>
+                  <select id="filter-rating">
+                    <option value="">All Ratings</option>
+                    <option value="5">5 Stars</option>
+                    <option value="4">4 Stars</option>
+                    <option value="3">3 Stars</option>
+                    <option value="2">2 Stars</option>
+                    <option value="1">1 Star</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="filter-date-from">Date From</label>
+                  <input type="date" id="filter-date-from" />
+                </div>
+                <div class="filter-group">
+                  <label for="filter-date-to">Date To</label>
+                  <input type="date" id="filter-date-to" />
+                </div>
+                <div class="filter-group filter-group-wide">
+                  <label for="filter-comment">Search Comment</label>
+                  <input type="text" id="filter-comment" placeholder="Search in review text..." />
+                </div>
+                <div class="filter-actions">
+                  <button id="apply-filters" class="filter-btn">Apply Filters</button>
+                  <button id="clear-filters" class="filter-btn filter-btn-secondary">Clear</button>
+                </div>
+              </div>
+
+              <!-- Results Info -->
+              <div class="reviews-info">
+                <span id="reviews-count">Loading reviews...</span>
+              </div>
+
+              <!-- Reviews Table -->
+              <div class="reviews-table-container">
+                <table class="reviews-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Rating</th>
+                      <th>Clinic</th>
+                      <th>Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reviews-tbody">
+                    <tr>
+                      <td colspan="4" class="loading-state">Loading reviews...</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <!-- Pagination -->
+              <div class="reviews-pagination">
+                <button id="prev-page" class="pagination-btn" disabled>Previous</button>
+                <span id="page-info">Page 1</span>
+                <button id="next-page" class="pagination-btn">Next</button>
+              </div>
             </div>
           </div>
         </div>

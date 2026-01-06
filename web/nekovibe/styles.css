@@ -190,18 +190,12 @@ body {
 
 /* Combined Reviews Layout */
 .reviews-combined-layout {
-  display: grid;
-  grid-template-columns: 1fr 400px;
+  display: flex;
+  flex-direction: column;
   gap: 1.5rem;
-  min-height: 600px;
 }
 
-.reviews-sidebar {
-  overflow-y: auto;
-  max-height: calc(100vh - 200px);
-}
-
-.reviews-chat-sidebar {
+.reviews-chat-section {
   display: flex;
   flex-direction: column;
   border-radius: var(--radius-card);
@@ -209,7 +203,8 @@ body {
   background: var(--card-bg);
   box-shadow: var(--shadow-card);
   padding: clamp(1rem, 3vw, 1.5rem);
-  min-height: 600px;
+  min-height: 300px;
+  max-height: 400px;
 }
 
 #reviews-chat-stream {
@@ -217,28 +212,13 @@ body {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  min-height: 400px;
-  max-height: calc(100vh - 350px);
   overflow-y: auto;
   margin-bottom: 1rem;
+  min-height: 200px;
 }
 
 #reviews-ask-form {
   margin-top: auto;
-}
-
-@media (max-width: 1024px) {
-  .reviews-combined-layout {
-    grid-template-columns: 1fr;
-  }
-  
-  .reviews-sidebar {
-    max-height: 400px;
-  }
-  
-  .reviews-chat-sidebar {
-    min-height: 400px;
-  }
 }
 
 #chat-stream {
