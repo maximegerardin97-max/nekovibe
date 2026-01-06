@@ -279,48 +279,177 @@ function initSupabaseClient() {
   return false;
 }
 
+// Tab switching
+function setupTabSwitching() {
+  const tabChat = document.getElementById("tab-chat");
+  const tabReviews = document.getElementById("tab-reviews");
+  const chatView = document.getElementById("chat-view");
+  const reviewsView = document.getElementById("reviews-view");
+  
+  if (!tabChat || !tabReviews || !chatView || !reviewsView) {
+    console.warn("Tab elements not found");
+    return;
+  }
+  
+  function switchToTab(tabName) {
+    // Update button states
+    tabChat.classList.remove("active");
+    tabReviews.classList.remove("active");
+    
+    // Hide all views
+    chatView.classList.remove("active");
+    reviewsView.classList.remove("active");
+    
+    if (tabName === "chat") {
+      tabChat.classList.add("active");
+      chatView.classList.add("active");
+    } else if (tabName === "reviews") {
+      tabReviews.classList.add("active");
+      reviewsView.classList.add("active");
+      
+      // Load reviews data when switching to reviews tab
+      if (typeof loadClinics === "function") loadClinics();
+      if (typeof loadReviews === "function") loadReviews();
+    }
+  }
+  
+  tabChat.addEventListener("click", () => switchToTab("chat"));
+  tabReviews.addEventListener("click", () => switchToTab("reviews"));
+}
+
+// Setup reviews chat (same as main chat but always uses reviews source)
+function setupReviewsChat() {
+  const reviewsChatStream = document.getElementById("reviews-chat-stream");
+  const reviewsForm = document.getElementById("reviews-ask-form");
+  const reviewsTextarea = document.getElementById("reviews-prompt");
+  
+  if (!reviewsChatStream || !reviewsForm || !reviewsTextarea) {
+    console.warn("Reviews chat elements not found");
+    return;
+  }
+  
+  const reviewsChatState = {
+    messages: [],
+    pending: false,
+  };
+  
+  reviewsForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (reviewsChatState.pending) return;
+    
+    const prompt = reviewsTextarea.value.trim();
+    if (!prompt) {
+      reviewsTextarea.focus();
+      return;
+    }
+    
+    // Always use reviews source for reviews chat
+    const sources = ["reviews"];
+    
+    appendMessageToStream(reviewsChatStream, { role: "user", content: prompt });
+    reviewsTextarea.value = "";
+    
+    const loadingId = appendMessageToStream(reviewsChatStream, { role: "assistant", content: "Thinking…" }, true);
+    reviewsChatState.pending = true;
+    
+    try {
+      const headers = { "Content-Type": "application/json" };
+      if (functionKey) {
+        headers.apikey = functionKey;
+        headers.Authorization = `Bearer ${functionKey}`;
+      }
+      
+      const response = await fetch(functionUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ prompt, sources }),
+      });
+      
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+      
+      const data = await response.json();
+      
+      replaceMessageInStream(reviewsChatStream, loadingId, { 
+        role: "assistant", 
+        content: data.answer ?? "No answer returned.",
+        prompt: prompt,
+        sources: sources
+      });
+    } catch (error) {
+      console.error("reviews chat error", error);
+      replaceMessageInStream(reviewsChatStream, loadingId, {
+        role: "assistant",
+        content: "I couldn't reach Nekovibe right now. Please try again.",
+      });
+    } finally {
+      reviewsChatState.pending = false;
+      reviewsTextarea.focus();
+    }
+  });
+  
+  reviewsTextarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      reviewsForm.requestSubmit();
+    }
+  });
+}
+
+// Helper functions for reviews chat stream
+function appendMessageToStream(stream, message, isTemporary = false) {
+  const bubble = document.createElement("div");
+  bubble.classList.add("chat-bubble", message.role === "user" ? "user" : "assistant");
+  bubble.dataset.messageId = isTemporary ? createId() : "";
+  bubble.classList.add("chat-bubble--enter");
+  
+  if (isTemporary && message.role === "assistant") {
+    bubble.classList.add("pending");
+    bubble.innerHTML = `
+      <div class="bubble-spinner" aria-hidden="true"></div>
+      <span>${message.content}</span>
+    `;
+  } else {
+    renderBubbleContent(bubble, { ...message, isTemporary });
+  }
+  
+  stream.appendChild(bubble);
+  stream.scrollTop = stream.scrollHeight;
+  return bubble.dataset.messageId || null;
+}
+
+function replaceMessageInStream(stream, messageId, newMessage) {
+  const bubble = stream.querySelector(`[data-message-id="${messageId}"]`);
+  if (!bubble) {
+    appendMessageToStream(stream, newMessage);
+    return;
+  }
+  bubble.className = `chat-bubble ${newMessage.role === "user" ? "user" : "assistant"}`;
+  bubble.classList.remove("pending");
+  bubble.classList.add("chat-bubble--enter");
+  renderBubbleContent(bubble, newMessage);
+  delete bubble.dataset.messageId;
+}
+
 // Try to initialize immediately, or wait for DOMContentLoaded
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
+    setupTabSwitching();
+    setupReviewsChat();
     initSupabaseClient();
     setupReviewsView();
   });
 } else {
-  // DOM already loaded, wait a bit for supabase script to load
+  // DOM already loaded
+  setupTabSwitching();
+  setupReviewsChat();
+  // Wait a bit for supabase script to load
   setTimeout(() => {
     initSupabaseClient();
     setupReviewsView();
   }, 100);
 }
-
-// View switching - button next to Social
-const viewAllReviewsBtn = document.getElementById("view-all-reviews-btn");
-const chatView = document.getElementById("chat-view");
-const reviewsView = document.getElementById("reviews-view");
-
-let showingReviews = false;
-
-viewAllReviewsBtn?.addEventListener("click", () => {
-  showingReviews = !showingReviews;
-  
-  if (showingReviews) {
-    // Show reviews view
-    chatView.style.display = "none";
-    reviewsView.style.display = "block";
-    viewAllReviewsBtn.classList.add("active");
-    viewAllReviewsBtn.textContent = "Back to Chat";
-    
-    // Load reviews data
-    if (typeof loadClinics === "function") loadClinics();
-    if (typeof loadReviews === "function") loadReviews();
-  } else {
-    // Show chat view
-    chatView.style.display = "block";
-    reviewsView.style.display = "none";
-    viewAllReviewsBtn.classList.remove("active");
-    viewAllReviewsBtn.textContent = "View All Reviews";
-  }
-});
 
 // Reviews state
 const reviewsState = {
@@ -471,7 +600,7 @@ function updateReviewsTable(reviews, errorMessage) {
   }
   
   tbody.innerHTML = reviews
-    .map((review) => {
+    .map((review, index) => {
       const date = review.published_at
         ? new Date(review.published_at).toLocaleDateString("en-US", {
             year: "numeric",
@@ -482,18 +611,48 @@ function updateReviewsTable(reviews, errorMessage) {
       const rating = review.rating ? "★".repeat(review.rating) : "N/A";
       const clinic = review.clinic_name || "Unknown";
       const comment = review.text || "";
+      const commentId = `comment-${index}`;
+      const maxLength = 200;
+      const isTruncated = comment.length > maxLength;
+      const truncatedComment = isTruncated ? comment.substring(0, maxLength) + "..." : comment;
       
       return `
         <tr>
           <td class="review-date">${date}</td>
           <td class="review-rating">${rating}</td>
           <td class="review-clinic">${escapeHtml(clinic)}</td>
-          <td class="review-comment">${escapeHtml(comment)}</td>
+          <td class="review-comment">
+            <span class="comment-text" id="${commentId}-text">${escapeHtml(truncatedComment)}</span>
+            ${isTruncated ? `<span class="comment-full" id="${commentId}-full" style="display: none;">${escapeHtml(comment)}</span><button class="comment-toggle" data-comment-id="${commentId}" onclick="toggleComment('${commentId}')">Show more</button>` : ""}
+          </td>
         </tr>
       `;
     })
     .join("");
 }
+
+function toggleComment(commentId) {
+  const textSpan = document.getElementById(`${commentId}-text`);
+  const fullSpan = document.getElementById(`${commentId}-full`);
+  const button = document.querySelector(`[data-comment-id="${commentId}"]`);
+  
+  if (!textSpan || !fullSpan || !button) return;
+  
+  const isExpanded = fullSpan.style.display !== "none";
+  
+  if (isExpanded) {
+    textSpan.style.display = "inline";
+    fullSpan.style.display = "none";
+    button.textContent = "Show more";
+  } else {
+    textSpan.style.display = "none";
+    fullSpan.style.display = "inline";
+    button.textContent = "Show less";
+  }
+}
+
+// Make toggleComment available globally
+window.toggleComment = toggleComment;
 
 function escapeHtml(text) {
   const div = document.createElement("div");

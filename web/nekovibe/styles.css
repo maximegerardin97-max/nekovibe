@@ -175,6 +175,72 @@ body {
   border-color: var(--accent-teal);
 }
 
+.tab-button.active {
+  background: var(--accent-teal) !important;
+  color: #fff !important;
+}
+
+.tab-content {
+  display: none;
+}
+
+.tab-content.active {
+  display: block;
+}
+
+/* Combined Reviews Layout */
+.reviews-combined-layout {
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 1.5rem;
+  min-height: 600px;
+}
+
+.reviews-sidebar {
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
+}
+
+.reviews-chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-card);
+  border: 1px solid var(--line-soft);
+  background: var(--card-bg);
+  box-shadow: var(--shadow-card);
+  padding: clamp(1rem, 3vw, 1.5rem);
+  min-height: 600px;
+}
+
+#reviews-chat-stream {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 400px;
+  max-height: calc(100vh - 350px);
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+#reviews-ask-form {
+  margin-top: auto;
+}
+
+@media (max-width: 1024px) {
+  .reviews-combined-layout {
+    grid-template-columns: 1fr;
+  }
+  
+  .reviews-sidebar {
+    max-height: 400px;
+  }
+  
+  .reviews-chat-sidebar {
+    min-height: 400px;
+  }
+}
+
 #chat-stream {
   flex: 1;
   display: flex;
@@ -501,6 +567,29 @@ button[type="submit"]:hover {
 .review-comment {
   max-width: 500px;
   line-height: 1.5;
+  position: relative;
+}
+
+.comment-text,
+.comment-full {
+  display: inline;
+}
+
+.comment-toggle {
+  margin-left: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: var(--accent-teal);
+  font-size: 0.85rem;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+  transition: color var(--transition-base);
+}
+
+.comment-toggle:hover {
+  color: var(--accent-blue);
 }
 
 .loading-state,
