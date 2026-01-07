@@ -1035,5 +1035,179 @@ function setupReviewsView() {
   // Make loadClinics and loadReviews available globally for tab switching
   window.loadClinics = loadClinics;
   window.loadReviews = loadReviews;
+  
+  // Setup ratings graph
+  setupRatingsGraph();
+}
+
+// Ratings graph state
+let ratingsChart = null;
+
+// Load all reviews for graph (no pagination)
+async function loadReviewsForGraph(clinicFilter = "") {
+  if (!supabaseClient) return [];
+  
+  try {
+    let query = supabaseClient
+      .from("google_reviews")
+      .select("published_at, rating, clinic_name")
+      .order("published_at", { ascending: true });
+    
+    if (clinicFilter) {
+      query = query.eq("clinic_name", clinicFilter);
+    }
+    
+    const { data, error } = await query;
+    
+    if (error) throw error;
+    
+    return data || [];
+  } catch (error) {
+    console.error("Error loading reviews for graph:", error);
+    return [];
+  }
+}
+
+// Setup and update ratings graph
+async function setupRatingsGraph() {
+  const canvas = document.getElementById("ratings-chart");
+  const clinicFilter = document.getElementById("graph-clinic-filter");
+  
+  if (!canvas) return;
+  
+  // Load clinics for filter
+  if (clinicFilter) {
+    const clinics = await loadClinicsForFilter();
+    clinicFilter.innerHTML = '<option value="">All Clinics</option>' + 
+      clinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    
+    clinicFilter.addEventListener("change", async () => {
+      await updateRatingsGraph(clinicFilter.value);
+    });
+  }
+  
+  // Initial graph load
+  await updateRatingsGraph("");
+}
+
+async function loadClinicsForFilter() {
+  if (!supabaseClient) return [];
+  
+  try {
+    const { data, error } = await supabaseClient
+      .from("google_reviews")
+      .select("clinic_name")
+      .order("clinic_name");
+    
+    if (error) throw error;
+    
+    // Get unique clinic names
+    const uniqueClinics = [...new Set((data || []).map(r => r.clinic_name).filter(Boolean))];
+    return uniqueClinics;
+  } catch (error) {
+    console.error("Error loading clinics:", error);
+    return [];
+  }
+}
+
+async function updateRatingsGraph(clinicFilter = "") {
+  const reviews = await loadReviewsForGraph(clinicFilter);
+  
+  if (!reviews || reviews.length === 0) {
+    if (ratingsChart) {
+      ratingsChart.destroy();
+      ratingsChart = null;
+    }
+    return;
+  }
+  
+  // Group reviews by date and calculate average rating per day
+  const dateMap = new Map();
+  
+  reviews.forEach(review => {
+    if (!review.published_at || !review.rating) return;
+    
+    const date = new Date(review.published_at).toISOString().split('T')[0]; // YYYY-MM-DD
+    if (!dateMap.has(date)) {
+      dateMap.set(date, { total: 0, count: 0 });
+    }
+    const dayData = dateMap.get(date);
+    dayData.total += review.rating;
+    dayData.count += 1;
+  });
+  
+  // Convert to arrays for chart
+  const dates = Array.from(dateMap.keys()).sort();
+  const avgRatings = dates.map(date => {
+    const dayData = dateMap.get(date);
+    return (dayData.total / dayData.count).toFixed(2);
+  });
+  
+  // Create or update chart
+  const ctx = document.getElementById("ratings-chart").getContext("2d");
+  
+  if (ratingsChart) {
+    ratingsChart.destroy();
+  }
+  
+  ratingsChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates.map(date => {
+        const d = new Date(date);
+        return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      }),
+      datasets: [{
+        label: 'Average Rating',
+        data: avgRatings,
+        borderColor: 'rgb(111, 143, 195)',
+        backgroundColor: 'rgba(111, 143, 195, 0.1)',
+        tension: 0.4,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+        },
+        tooltip: {
+          callbacks: {
+            label: function(context) {
+              return `Rating: ${context.parsed.y} / 5.0`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: false,
+          min: 0,
+          max: 5,
+          ticks: {
+            stepSize: 0.5,
+            callback: function(value) {
+              return value + '★';
+            }
+          },
+          title: {
+            display: true,
+            text: 'Rating (out of 5)'
+          }
+        },
+        x: {
+          title: {
+            display: true,
+            text: 'Date'
+          }
+        }
+      }
+    }
+  });
 }
 
