@@ -222,16 +222,17 @@ body {
 
 #reviews-ask-form textarea {
   flex: 1;
-  font-size: 0.9rem;
-  padding: 0.75rem;
+  font-size: 0.95rem;
+  padding: 0.875rem 1rem;
   border: 1px solid var(--line-soft);
-  border-radius: 8px;
+  border-radius: 12px;
   background: var(--card-bg);
   color: var(--text-main);
   font-family: inherit;
   resize: none;
-  min-height: 50px;
-  max-height: 50px;
+  min-height: 56px;
+  max-height: 56px;
+  line-height: 1.5;
 }
 
 #reviews-ask-form textarea:focus {
