@@ -688,6 +688,12 @@ button[type="submit"]:hover {
   font-variant-numeric: tabular-nums;
 }
 
+@media (min-width: 768px) {
+  .ratings-graph-container {
+    grid-column: 1 / -1; /* Span full width below chat and table */
+  }
+}
+
 @media (max-width: 640px) {
   .app-header {
     padding: 1.25rem;
