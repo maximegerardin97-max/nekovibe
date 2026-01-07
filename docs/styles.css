@@ -203,8 +203,59 @@ body {
   background: var(--card-bg);
   box-shadow: var(--shadow-card);
   padding: clamp(1rem, 3vw, 1.5rem);
-  min-height: 300px;
-  max-height: 400px;
+  min-height: 200px;
+  max-height: 350px; /* Make chat box smaller */
+}
+
+#reviews-chat-stream {
+  max-height: 200px; /* Limit chat stream height */
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ratings-graph-container {
+  background: var(--card-bg);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--line-soft);
+}
+
+.graph-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.graph-header h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.graph-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.graph-filter label {
+  font-size: 0.9rem;
+  color: var(--text-subtle);
+}
+
+.graph-filter select {
+  padding: 0.4rem 0.8rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  font-size: 0.9rem;
+}
+
+#ratings-chart {
+  max-height: 300px;
 }
 
 #reviews-chat-stream {
