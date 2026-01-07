@@ -314,6 +314,12 @@ function setupTabSwitching() {
       // Load reviews data when switching to reviews tab
       if (typeof loadClinics === "function") loadClinics();
       if (typeof loadReviews === "function") loadReviews();
+      
+      // Load and update ratings graph
+      if (typeof updateRatingsGraph === "function") {
+        const graphFilter = document.getElementById("graph-clinic-filter");
+        updateRatingsGraph(graphFilter?.value || "");
+      }
     } else if (tabName === "articles") {
       tabArticles.classList.add("active");
       articlesView.classList.add("active");
