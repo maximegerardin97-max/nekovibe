@@ -296,6 +296,11 @@ function setupTabSwitching() {
   }
   
   function switchToTab(tabName) {
+    // BLOCK switching away from internal tab if flag is set
+    if (window._stayOnInternalTab === true && tabName !== "internal") {
+      return; // Don't allow switching away
+    }
+    
     // Update button states
     tabChat.classList.remove("active");
     tabReviews.classList.remove("active");
@@ -351,16 +356,21 @@ function setupTabSwitching() {
     });
   }
   
-  // Default to reviews tab (only if not on internal tab and not just activated)
+  // Default to reviews tab (only if not on internal tab)
   const currentTab = document.querySelector(".tab-button.active");
   const isInternalAuthenticated = sessionStorage.getItem("internal_reviews_authenticated") === "true";
   const justActivatedInternal = window._internalTabJustActivated === true;
+  const stayOnInternal = window._stayOnInternalTab === true;
   
-  if (!currentTab || (currentTab.id !== "tab-internal" && !isInternalAuthenticated && !justActivatedInternal)) {
-    // Only switch to reviews if we're not already on internal tab
-    if (currentTab?.id !== "tab-internal" && !justActivatedInternal) {
-      switchToTab("reviews");
-    }
+  // NEVER switch away from internal tab if flag is set or if it's active
+  if (stayOnInternal || justActivatedInternal || (currentTab && currentTab.id === "tab-internal")) {
+    // Don't switch - stay on internal tab
+    return;
+  }
+  
+  // Only switch to reviews if we're not on internal tab
+  if (!currentTab || currentTab.id !== "tab-internal") {
+    switchToTab("reviews");
   }
 }
 

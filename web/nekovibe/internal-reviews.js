@@ -69,7 +69,11 @@ function setupInternalPasswordProtection() {
       if (loginError) loginError.style.display = "none";
       passwordInput.value = "";
       
-      // Ensure internal tab stays active - do this synchronously before any async operations
+      // CRITICAL: Set flag IMMEDIATELY to prevent any tab switches
+      window._internalTabJustActivated = true;
+      window._stayOnInternalTab = true;
+      
+      // Ensure internal tab stays active - do this synchronously
       const tabInternal = document.getElementById("tab-internal");
       const internalView = document.getElementById("internal-view");
       const tabChat = document.getElementById("tab-chat");
@@ -79,17 +83,15 @@ function setupInternalPasswordProtection() {
       const reviewsView = document.getElementById("reviews-view");
       const articlesView = document.getElementById("articles-view");
       
-      // Update tab states - keep internal tab active
+      // Force tab states - keep internal tab active
       if (tabChat) tabChat.classList.remove("active");
       if (tabReviews) tabReviews.classList.remove("active");
       if (tabArticles) tabArticles.classList.remove("active");
       if (tabInternal) {
         tabInternal.classList.add("active");
-        // Prevent any other tab switch handlers from running
-        tabInternal.focus();
       }
       
-      // Hide other views - keep internal view active
+      // Force view states - keep internal view active
       if (chatView) chatView.classList.remove("active");
       if (reviewsView) reviewsView.classList.remove("active");
       if (articlesView) articlesView.classList.remove("active");
@@ -97,18 +99,14 @@ function setupInternalPasswordProtection() {
         internalView.classList.add("active");
       }
       
-      // Prevent any default tab switching by setting a flag
-      window._internalTabJustActivated = true;
-      
-      // Use setTimeout to ensure tab state is set before initializing
+      // Initialize functionality after a short delay to ensure tab state is locked
       setTimeout(() => {
-        // Initialize functionality
         initializeInternalReviews();
-        // Clear flag after a short delay
+        // Keep flag for longer to prevent any delayed tab switches
         setTimeout(() => {
           window._internalTabJustActivated = false;
-        }, 100);
-      }, 0);
+        }, 500);
+      }, 10);
     } else {
       if (loginError) {
         loginError.textContent = "Incorrect password";
