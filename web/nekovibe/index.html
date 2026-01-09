@@ -23,17 +23,17 @@
           </p>
         </div>
         <div class="source-switcher" role="group" aria-label="Knowledge sources">
+          <button id="tab-internal" class="source-pill-button tab-button active" type="button">
+            🔒 Internal Reviews
+          </button>
           <button id="tab-chat" class="source-pill-button tab-button" type="button">
             Neko chat
           </button>
-          <button id="tab-reviews" class="source-pill-button tab-button active" type="button">
-            Neko reviews
+          <button id="tab-reviews" class="source-pill-button tab-button" type="button">
+            Neko Google Reviews
           </button>
           <button id="tab-articles" class="source-pill-button tab-button" type="button">
             Articles / Press / LinkedIn
-          </button>
-          <button id="tab-internal" class="source-pill-button tab-button" type="button">
-            Internal Reviews
           </button>
         </div>
       </header>
@@ -64,7 +64,7 @@
         </div>
 
         <!-- Neko Reviews View (Combined Reviews + Chat) -->
-        <div id="reviews-view" class="tab-content active">
+        <div id="reviews-view" class="tab-content">
           <div class="reviews-combined-layout">
             <!-- Top: Chat -->
             <div class="reviews-chat-section">
@@ -271,8 +271,8 @@
           </div>
         </div>
 
-        <!-- Internal Reviews View (Password Protected) -->
-        <div id="internal-view" class="tab-content">
+        <!-- Internal Reviews View (Password Protected) - DEFAULT -->
+        <div id="internal-view" class="tab-content active">
           <div id="internal-login" class="internal-login-container">
             <div class="login-box">
               <h2>Internal Reviews</h2>

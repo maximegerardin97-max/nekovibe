@@ -296,11 +296,6 @@ function setupTabSwitching() {
   }
   
   function switchToTab(tabName) {
-    // BLOCK switching away from internal tab if flag is set
-    if (window._stayOnInternalTab === true && tabName !== "internal") {
-      return; // Don't allow switching away
-    }
-    
     // Update button states
     tabChat.classList.remove("active");
     tabReviews.classList.remove("active");
@@ -365,28 +360,11 @@ function setupTabSwitching() {
     });
   }
   
-  // Default to reviews tab ONLY on initial page load, not after password entry
-  // Check if we're currently on internal tab - if so, DON'T switch
+  // Default to INTERNAL REVIEWS tab (always)
   const currentTab = document.querySelector(".tab-button.active");
-  const stayOnInternal = window._stayOnInternalTab === true;
-  
-  // NEVER switch away from internal tab if flag is set
-  if (stayOnInternal) {
-    return;
-  }
-  
-  // Only default to reviews if no tab is active AND we're not on internal tab
   if (!currentTab || currentTab.id !== "tab-internal") {
-    // Small delay to ensure internal tab setup is complete
-    setTimeout(() => {
-      // Double-check we're not on internal tab before switching
-      const checkTab = document.querySelector(".tab-button.active");
-      if (!checkTab || checkTab.id !== "tab-internal") {
-        if (!window._stayOnInternalTab) {
-          switchToTab("reviews");
-        }
-      }
-    }, 50);
+    // Switch to internal tab by default
+    switchToTab("internal");
   }
 }
 
