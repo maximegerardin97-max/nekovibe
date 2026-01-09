@@ -270,10 +270,15 @@ const supabaseKey = document.body.dataset.apikey || "";
 
 let supabaseClient = null;
 
+// Expose supabaseClient globally for internal-reviews.js
+window.supabaseClient = null;
+
 // Initialize Supabase client when library is loaded
 function initSupabaseClient() {
   if (supabaseUrl && supabaseKey && typeof supabase !== "undefined") {
     supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+    // Expose globally for internal-reviews.js
+    window.supabaseClient = supabaseClient;
     return true;
   }
   return false;

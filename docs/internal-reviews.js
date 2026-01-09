@@ -484,12 +484,9 @@ async function loadInternalReviews() {
       internalSupabaseClient = window.supabaseClient;
     } else {
       // Try to initialize it ourselves
-      const supabaseUrl = document.body.dataset.supabaseUrl || 
-                         document.body.getAttribute('data-supabase-url') ||
-                         "";
-      const supabaseAnonKey = document.body.dataset.supabaseAnonKey || 
-                             document.body.getAttribute('data-supabase-anon-key') ||
-                             "";
+      // The anon key is stored in data-apikey (same as function key)
+      const supabaseUrl = document.body.dataset.supabaseUrl || "";
+      const supabaseAnonKey = document.body.dataset.apikey || ""; // Use apikey as anon key
       
       console.log("Attempting to create new Supabase client:", {
         url: supabaseUrl ? "present" : "missing",
@@ -505,8 +502,7 @@ async function loadInternalReviews() {
           url: !supabaseUrl,
           key: !supabaseAnonKey,
           supabaseLib: !window.supabase,
-          bodyDataset: Object.keys(document.body.dataset),
-          bodyAttrs: Array.from(document.body.attributes).map(a => a.name)
+          bodyDataset: Object.keys(document.body.dataset)
         });
         const tbody = document.getElementById("internal-reviews-tbody");
         if (tbody) {
