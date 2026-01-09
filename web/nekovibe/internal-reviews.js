@@ -97,10 +97,17 @@ function setupInternalPasswordProtection() {
         internalView.classList.add("active");
       }
       
+      // Prevent any default tab switching by setting a flag
+      window._internalTabJustActivated = true;
+      
       // Use setTimeout to ensure tab state is set before initializing
       setTimeout(() => {
         // Initialize functionality
         initializeInternalReviews();
+        // Clear flag after a short delay
+        setTimeout(() => {
+          window._internalTabJustActivated = false;
+        }, 100);
       }, 0);
     } else {
       if (loginError) {

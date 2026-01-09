@@ -351,9 +351,16 @@ function setupTabSwitching() {
     });
   }
   
-  // Default to reviews tab (only if not on internal tab and not already authenticated to internal)
-  if (!isInternalTabActive && !isInternalAuthenticated) {
-    switchToTab("reviews");
+  // Default to reviews tab (only if not on internal tab and not just activated)
+  const currentTab = document.querySelector(".tab-button.active");
+  const isInternalAuthenticated = sessionStorage.getItem("internal_reviews_authenticated") === "true";
+  const justActivatedInternal = window._internalTabJustActivated === true;
+  
+  if (!currentTab || (currentTab.id !== "tab-internal" && !isInternalAuthenticated && !justActivatedInternal)) {
+    // Only switch to reviews if we're not already on internal tab
+    if (currentTab?.id !== "tab-internal" && !justActivatedInternal) {
+      switchToTab("reviews");
+    }
   }
 }
 
