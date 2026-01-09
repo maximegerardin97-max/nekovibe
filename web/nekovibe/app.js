@@ -345,9 +345,18 @@ function setupTabSwitching() {
     }
   }
   
-  tabChat.addEventListener("click", () => switchToTab("chat"));
-  tabReviews.addEventListener("click", () => switchToTab("reviews"));
-  tabArticles.addEventListener("click", () => switchToTab("articles"));
+  tabChat.addEventListener("click", () => {
+    window._stayOnInternalTab = false; // Clear flag when switching away
+    switchToTab("chat");
+  });
+  tabReviews.addEventListener("click", () => {
+    window._stayOnInternalTab = false; // Clear flag when switching away
+    switchToTab("reviews");
+  });
+  tabArticles.addEventListener("click", () => {
+    window._stayOnInternalTab = false; // Clear flag when switching away
+    switchToTab("articles");
+  });
   if (tabInternal) {
     tabInternal.addEventListener("click", (e) => {
       e.preventDefault();
@@ -356,21 +365,28 @@ function setupTabSwitching() {
     });
   }
   
-  // Default to reviews tab (only if not on internal tab)
+  // Default to reviews tab ONLY on initial page load, not after password entry
+  // Check if we're currently on internal tab - if so, DON'T switch
   const currentTab = document.querySelector(".tab-button.active");
-  const isInternalAuthenticated = sessionStorage.getItem("internal_reviews_authenticated") === "true";
-  const justActivatedInternal = window._internalTabJustActivated === true;
   const stayOnInternal = window._stayOnInternalTab === true;
   
-  // NEVER switch away from internal tab if flag is set or if it's active
-  if (stayOnInternal || justActivatedInternal || (currentTab && currentTab.id === "tab-internal")) {
-    // Don't switch - stay on internal tab
+  // NEVER switch away from internal tab if flag is set
+  if (stayOnInternal) {
     return;
   }
   
-  // Only switch to reviews if we're not on internal tab
+  // Only default to reviews if no tab is active AND we're not on internal tab
   if (!currentTab || currentTab.id !== "tab-internal") {
-    switchToTab("reviews");
+    // Small delay to ensure internal tab setup is complete
+    setTimeout(() => {
+      // Double-check we're not on internal tab before switching
+      const checkTab = document.querySelector(".tab-button.active");
+      if (!checkTab || checkTab.id !== "tab-internal") {
+        if (!window._stayOnInternalTab) {
+          switchToTab("reviews");
+        }
+      }
+    }, 50);
   }
 }
 

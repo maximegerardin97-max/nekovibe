@@ -70,7 +70,6 @@ function setupInternalPasswordProtection() {
       passwordInput.value = "";
       
       // CRITICAL: Set flag IMMEDIATELY to prevent any tab switches
-      window._internalTabJustActivated = true;
       window._stayOnInternalTab = true;
       
       // Ensure internal tab stays active - do this synchronously
@@ -99,14 +98,11 @@ function setupInternalPasswordProtection() {
         internalView.classList.add("active");
       }
       
-      // Initialize functionality after a short delay to ensure tab state is locked
-      setTimeout(() => {
-        initializeInternalReviews();
-        // Keep flag for longer to prevent any delayed tab switches
-        setTimeout(() => {
-          window._internalTabJustActivated = false;
-        }, 500);
-      }, 10);
+      // Initialize functionality
+      initializeInternalReviews();
+      
+      // Keep flag set permanently while on internal tab
+      // Only clear it when user explicitly clicks another tab
     } else {
       if (loginError) {
         loginError.textContent = "Incorrect password";
