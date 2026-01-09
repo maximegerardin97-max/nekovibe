@@ -543,6 +543,10 @@ function replaceMessageInStream(stream, messageId, newMessage) {
   delete bubble.dataset.messageId;
 }
 
+// Expose functions globally for internal-reviews.js
+window.appendMessageToStream = appendMessageToStream;
+window.replaceMessageInStream = replaceMessageInStream;
+
 // Articles state
 const articlesState = {
   currentPage: 1,

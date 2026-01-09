@@ -621,7 +621,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Use global functions from app.js if available
+// Use global functions from app.js
 function appendMessageToStream(stream, message, isTemporary = false) {
   if (typeof window.appendMessageToStream === "function") {
     return window.appendMessageToStream(stream, message, isTemporary);
