@@ -267,17 +267,23 @@ async function generateSummaries(supabase: any, batchId: string) {
   const summaryText = await generateSummaryText(latestReviews);
   
   if (summaryText) {
-    await supabase
-      .from("internal_review_summaries")
-      .upsert({
-        scope: "latest_upload",
-        summary_text: summaryText,
-        reviews_covered_count: latestReviews.length,
-        upload_batch_id: batchId,
-        last_refreshed_at: new Date().toISOString(),
-      }, {
-        onConflict: "scope,upload_batch_id",
-      });
+      // Delete old latest_upload summaries for this batch
+      await supabase
+        .from("internal_review_summaries")
+        .delete()
+        .eq("scope", "latest_upload")
+        .eq("upload_batch_id", batchId);
+      
+      // Insert new summary
+      await supabase
+        .from("internal_review_summaries")
+        .insert({
+          scope: "latest_upload",
+          summary_text: summaryText,
+          reviews_covered_count: latestReviews.length,
+          upload_batch_id: batchId,
+          last_refreshed_at: new Date().toISOString(),
+        });
   }
 
   // Also update all_time summary
@@ -290,15 +296,22 @@ async function generateSummaries(supabase: any, batchId: string) {
   if (allReviews && allReviews.length > 0) {
     const allTimeSummary = await generateSummaryText(allReviews);
     if (allTimeSummary) {
+      // Delete old all_time summary (it has NULL upload_batch_id)
       await supabase
         .from("internal_review_summaries")
-        .upsert({
+        .delete()
+        .eq("scope", "all_time")
+        .is("upload_batch_id", null);
+      
+      // Insert new summary
+      await supabase
+        .from("internal_review_summaries")
+        .insert({
           scope: "all_time",
           summary_text: allTimeSummary,
           reviews_covered_count: allReviews.length,
+          upload_batch_id: null,
           last_refreshed_at: new Date().toISOString(),
-        }, {
-          onConflict: "scope,upload_batch_id",
         });
     }
   }

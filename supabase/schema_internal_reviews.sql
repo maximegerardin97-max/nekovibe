@@ -25,14 +25,15 @@ CREATE TABLE IF NOT EXISTS internal_review_summaries (
   scope TEXT NOT NULL CHECK (scope IN ('all_time', 'latest_upload', 'last_week', 'last_month')),
   summary_text TEXT NOT NULL,
   reviews_covered_count INTEGER DEFAULT 0,
-  upload_batch_id TEXT, -- For latest_upload scope
+  upload_batch_id TEXT, -- For latest_upload scope (NULL for other scopes)
   last_refreshed_at TIMESTAMPTZ DEFAULT NOW(),
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  
-  -- Ensure one summary per scope
-  CONSTRAINT internal_review_summaries_unique UNIQUE (scope, upload_batch_id)
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Unique index that handles NULL upload_batch_id properly
+CREATE UNIQUE INDEX IF NOT EXISTS idx_internal_review_summaries_unique 
+ON internal_review_summaries (scope, COALESCE(upload_batch_id, ''));
 
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_internal_reviews_published_at ON internal_reviews(published_at DESC);
