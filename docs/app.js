@@ -351,9 +351,8 @@ function setupTabSwitching() {
     });
   }
   
-  // Default to reviews tab (only if not on internal tab)
-  const currentTab = document.querySelector(".tab-button.active");
-  if (!currentTab || currentTab.id !== "tab-internal") {
+  // Default to reviews tab (only if not on internal tab and not already authenticated to internal)
+  if (!isInternalTabActive && !isInternalAuthenticated) {
     switchToTab("reviews");
   }
 }

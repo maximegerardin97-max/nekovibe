@@ -58,6 +58,7 @@ function setupInternalPasswordProtection() {
   loginForm.addEventListener("submit", (e) => {
     e.preventDefault();
     e.stopPropagation();
+    e.stopImmediatePropagation();
     const password = passwordInput.value.trim();
 
     if (password === INTERNAL_PASSWORD) {
@@ -68,7 +69,7 @@ function setupInternalPasswordProtection() {
       if (loginError) loginError.style.display = "none";
       passwordInput.value = "";
       
-      // Ensure internal tab stays active
+      // Ensure internal tab stays active - do this synchronously before any async operations
       const tabInternal = document.getElementById("tab-internal");
       const internalView = document.getElementById("internal-view");
       const tabChat = document.getElementById("tab-chat");
@@ -82,16 +83,25 @@ function setupInternalPasswordProtection() {
       if (tabChat) tabChat.classList.remove("active");
       if (tabReviews) tabReviews.classList.remove("active");
       if (tabArticles) tabArticles.classList.remove("active");
-      if (tabInternal) tabInternal.classList.add("active");
+      if (tabInternal) {
+        tabInternal.classList.add("active");
+        // Prevent any other tab switch handlers from running
+        tabInternal.focus();
+      }
       
       // Hide other views - keep internal view active
       if (chatView) chatView.classList.remove("active");
       if (reviewsView) reviewsView.classList.remove("active");
       if (articlesView) articlesView.classList.remove("active");
-      if (internalView) internalView.classList.add("active");
+      if (internalView) {
+        internalView.classList.add("active");
+      }
       
-      // Initialize functionality
-      initializeInternalReviews();
+      // Use setTimeout to ensure tab state is set before initializing
+      setTimeout(() => {
+        // Initialize functionality
+        initializeInternalReviews();
+      }, 0);
     } else {
       if (loginError) {
         loginError.textContent = "Incorrect password";
@@ -99,6 +109,8 @@ function setupInternalPasswordProtection() {
       }
       passwordInput.value = "";
     }
+    
+    return false;
   });
 }
 
