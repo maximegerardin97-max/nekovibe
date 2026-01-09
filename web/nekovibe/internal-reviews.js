@@ -55,6 +55,7 @@ function setupInternalPasswordProtection() {
 
   loginForm.addEventListener("submit", (e) => {
     e.preventDefault();
+    e.stopPropagation();
     const password = passwordInput.value.trim();
 
     if (password === INTERNAL_PASSWORD) {
@@ -64,6 +65,28 @@ function setupInternalPasswordProtection() {
       if (contentContainer) contentContainer.style.display = "block";
       if (loginError) loginError.style.display = "none";
       passwordInput.value = "";
+      
+      // Ensure internal tab stays active
+      const tabInternal = document.getElementById("tab-internal");
+      const internalView = document.getElementById("internal-view");
+      const tabChat = document.getElementById("tab-chat");
+      const tabReviews = document.getElementById("tab-reviews");
+      const tabArticles = document.getElementById("tab-articles");
+      const chatView = document.getElementById("chat-view");
+      const reviewsView = document.getElementById("reviews-view");
+      const articlesView = document.getElementById("articles-view");
+      
+      // Update tab states - keep internal tab active
+      if (tabChat) tabChat.classList.remove("active");
+      if (tabReviews) tabReviews.classList.remove("active");
+      if (tabArticles) tabArticles.classList.remove("active");
+      if (tabInternal) tabInternal.classList.add("active");
+      
+      // Hide other views - keep internal view active
+      if (chatView) chatView.classList.remove("active");
+      if (reviewsView) reviewsView.classList.remove("active");
+      if (articlesView) articlesView.classList.remove("active");
+      if (internalView) internalView.classList.add("active");
       
       // Initialize functionality
       initializeInternalReviews();
@@ -90,35 +113,45 @@ function setupInternalTabSwitching() {
 
   if (!tabInternal || !internalView) return;
 
-  tabInternal.addEventListener("click", () => {
-    // Check authentication
-    if (sessionStorage.getItem("internal_reviews_authenticated") !== "true") {
-      // Show login
-      const loginContainer = document.getElementById("internal-login");
-      const contentContainer = document.getElementById("internal-content");
-      if (loginContainer) loginContainer.style.display = "block";
-      if (contentContainer) contentContainer.style.display = "none";
-    }
+  // Remove any existing listeners to avoid duplicates
+  const newTabInternal = tabInternal.cloneNode(true);
+  tabInternal.parentNode?.replaceChild(newTabInternal, tabInternal);
+  const freshTabInternal = document.getElementById("tab-internal");
 
-    // Update tab states
-    if (tabChat) tabChat.classList.remove("active");
-    if (tabReviews) tabReviews.classList.remove("active");
-    if (tabArticles) tabArticles.classList.remove("active");
-    tabInternal.classList.add("active");
+  if (freshTabInternal) {
+    freshTabInternal.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      
+      // Check authentication
+      if (sessionStorage.getItem("internal_reviews_authenticated") !== "true") {
+        // Show login
+        const loginContainer = document.getElementById("internal-login");
+        const contentContainer = document.getElementById("internal-content");
+        if (loginContainer) loginContainer.style.display = "block";
+        if (contentContainer) contentContainer.style.display = "none";
+      }
 
-    // Hide other views
-    if (chatView) chatView.classList.remove("active");
-    if (reviewsView) reviewsView.classList.remove("active");
-    if (articlesView) articlesView.classList.remove("active");
-    internalView.classList.add("active");
+      // Update tab states
+      if (tabChat) tabChat.classList.remove("active");
+      if (tabReviews) tabReviews.classList.remove("active");
+      if (tabArticles) tabArticles.classList.remove("active");
+      freshTabInternal.classList.add("active");
 
-    // Load data if authenticated
-    if (internalReviewsAuthenticated) {
-      loadInternalClinics();
-      loadInternalReviews();
-      updateInternalRatingsGraph();
-    }
-  });
+      // Hide other views
+      if (chatView) chatView.classList.remove("active");
+      if (reviewsView) reviewsView.classList.remove("active");
+      if (articlesView) articlesView.classList.remove("active");
+      if (internalView) internalView.classList.add("active");
+
+      // Load data if authenticated
+      if (internalReviewsAuthenticated || sessionStorage.getItem("internal_reviews_authenticated") === "true") {
+        loadInternalClinics();
+        loadInternalReviews();
+        updateInternalRatingsGraph();
+      }
+    });
+  }
 }
 
 // Internal Chat

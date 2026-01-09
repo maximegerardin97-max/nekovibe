@@ -340,12 +340,16 @@ function setupTabSwitching() {
   tabChat.addEventListener("click", () => switchToTab("chat"));
   tabReviews.addEventListener("click", () => switchToTab("reviews"));
   tabArticles.addEventListener("click", () => switchToTab("articles"));
-  if (tabInternal) {
-    tabInternal.addEventListener("click", () => switchToTab("internal"));
-  }
+  // Don't add listener for internal tab here - it's handled by internal-reviews.js
+  // if (tabInternal) {
+  //   tabInternal.addEventListener("click", () => switchToTab("internal"));
+  // }
   
-  // Default to reviews tab
-  switchToTab("reviews");
+  // Default to reviews tab (only if not on internal tab)
+  const currentTab = document.querySelector(".tab-button.active");
+  if (!currentTab || currentTab.id !== "tab-internal") {
+    switchToTab("reviews");
+  }
 }
 
 // Setup reviews chat (same as main chat but always uses reviews source)
