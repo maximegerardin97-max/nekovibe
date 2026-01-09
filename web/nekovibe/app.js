@@ -808,9 +808,13 @@ function setupArticlesView() {
 }
 
 // Try to initialize immediately, or wait for DOMContentLoaded
+let tabSwitchingSetup = false;
 if (document.readyState === "loading") {
   document.addEventListener("DOMContentLoaded", () => {
-    setupTabSwitching();
+    if (!tabSwitchingSetup) {
+      setupTabSwitching();
+      tabSwitchingSetup = true;
+    }
     setupReviewsChat();
     setupArticlesChat();
     initSupabaseClient();
@@ -819,7 +823,10 @@ if (document.readyState === "loading") {
   });
 } else {
   // DOM already loaded
-  setupTabSwitching();
+  if (!tabSwitchingSetup) {
+    setupTabSwitching();
+    tabSwitchingSetup = true;
+  }
   setupReviewsChat();
   setupArticlesChat();
   // Wait a bit for supabase script to load
