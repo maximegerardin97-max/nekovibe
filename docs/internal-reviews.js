@@ -325,10 +325,13 @@ function setupInternalCSVUpload() {
           </p>
         `;
         
-        // Reload data
-        loadInternalReviews();
-        updateInternalRatingsGraph();
-        loadInternalClinics();
+        // Force reload data with a small delay to ensure DB is updated
+        setTimeout(() => {
+          console.log("Reloading reviews after upload...");
+          loadInternalReviews();
+          updateInternalRatingsGraph();
+          loadInternalClinics();
+        }, 500);
       } else {
         uploadStatus.innerHTML = `<p class="upload-status-error">❌ Upload failed: ${data.error || 'Unknown error'}</p>`;
       }
@@ -443,8 +446,23 @@ async function loadInternalClinics() {
 
 // Load Reviews
 async function loadInternalReviews() {
-  if (!internalSupabaseClient) return;
+  // Ensure Supabase client is initialized
+  if (!internalSupabaseClient) {
+    const supabaseUrl = document.body.dataset.supabaseUrl || "";
+    const supabaseAnonKey = document.body.dataset.supabaseAnonKey || "";
+    if (supabaseUrl && supabaseAnonKey) {
+      internalSupabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+    } else {
+      console.error("Supabase client not initialized - missing URL or key");
+      const tbody = document.getElementById("internal-reviews-tbody");
+      if (tbody) {
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Error: Supabase not configured</td></tr>';
+      }
+      return;
+    }
+  }
 
+  console.log("Loading internal reviews...");
   let query = internalSupabaseClient
     .from("internal_reviews")
     .select("*", { count: "exact" });
@@ -475,9 +493,14 @@ async function loadInternalReviews() {
 
   if (error) {
     console.error("Error loading reviews:", error);
+    const tbody = document.getElementById("internal-reviews-tbody");
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="4" class="empty-state">Error loading reviews: ${error.message}</td></tr>`;
+    }
     return;
   }
 
+  console.log(`Loaded ${data?.length || 0} reviews (total: ${count || 0})`);
   updateInternalReviewsTable(data || []);
   updateInternalReviewsPagination(count || 0);
 }
@@ -485,7 +508,12 @@ async function loadInternalReviews() {
 // Update Reviews Table
 function updateInternalReviewsTable(reviews) {
   const tbody = document.getElementById("internal-reviews-tbody");
-  if (!tbody) return;
+  if (!tbody) {
+    console.error("Reviews tbody not found!");
+    return;
+  }
+
+  console.log(`Updating table with ${reviews.length} reviews`);
 
   if (reviews.length === 0) {
     tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No reviews found</td></tr>';
