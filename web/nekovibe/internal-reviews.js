@@ -18,10 +18,40 @@ let internalReviewsFilters = {
 // Initialize internal reviews when authenticated
 function initializeInternalReviews() {
   if (!internalSupabaseClient) {
-    const supabaseUrl = document.body.dataset.supabaseUrl || "";
-    const supabaseAnonKey = document.body.dataset.supabaseAnonKey || "";
-    if (supabaseUrl && supabaseAnonKey) {
+    // Try multiple ways to get Supabase credentials
+    let supabaseUrl = document.body.dataset.supabaseUrl || "";
+    let supabaseAnonKey = document.body.dataset.supabaseAnonKey || "";
+    
+    // If not in dataset, try to get from the main app's supabaseClient if it exists
+    if (!supabaseUrl && window.supabaseClient) {
+      // Try to extract from existing client (hacky but works)
+      console.log("Trying to use existing Supabase client from app.js");
+    }
+    
+    // Fallback: try to get from script tag or global
+    if (!supabaseUrl) {
+      supabaseUrl = window.SUPABASE_URL || "";
+    }
+    if (!supabaseAnonKey) {
+      supabaseAnonKey = window.SUPABASE_ANON_KEY || "";
+    }
+    
+    console.log("Initializing Supabase client:", { 
+      url: supabaseUrl ? "present" : "missing", 
+      key: supabaseAnonKey ? "present" : "missing",
+      supabaseLib: !!window.supabase
+    });
+    
+    if (supabaseUrl && supabaseAnonKey && window.supabase) {
       internalSupabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+      console.log("Supabase client initialized successfully");
+    } else {
+      console.error("Cannot initialize Supabase client - missing:", {
+        url: !supabaseUrl,
+        key: !supabaseAnonKey,
+        supabaseLib: !window.supabase,
+        bodyDataset: Object.keys(document.body.dataset)
+      });
     }
   }
 
@@ -446,19 +476,44 @@ async function loadInternalClinics() {
 
 // Load Reviews
 async function loadInternalReviews() {
-  // Ensure Supabase client is initialized
+  // Ensure Supabase client is initialized - try to reuse from app.js if available
   if (!internalSupabaseClient) {
-    const supabaseUrl = document.body.dataset.supabaseUrl || "";
-    const supabaseAnonKey = document.body.dataset.supabaseAnonKey || "";
-    if (supabaseUrl && supabaseAnonKey) {
-      internalSupabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+    // First try to use the global supabaseClient from app.js if it exists
+    if (window.supabaseClient && typeof window.supabaseClient.from === 'function') {
+      console.log("Using existing Supabase client from app.js");
+      internalSupabaseClient = window.supabaseClient;
     } else {
-      console.error("Supabase client not initialized - missing URL or key");
-      const tbody = document.getElementById("internal-reviews-tbody");
-      if (tbody) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Error: Supabase not configured</td></tr>';
+      // Try to initialize it ourselves
+      const supabaseUrl = document.body.dataset.supabaseUrl || 
+                         document.body.getAttribute('data-supabase-url') ||
+                         "";
+      const supabaseAnonKey = document.body.dataset.supabaseAnonKey || 
+                             document.body.getAttribute('data-supabase-anon-key') ||
+                             "";
+      
+      console.log("Attempting to create new Supabase client:", {
+        url: supabaseUrl ? "present" : "missing",
+        key: supabaseAnonKey ? "present" : "missing",
+        supabaseLib: !!window.supabase
+      });
+      
+      if (supabaseUrl && supabaseAnonKey && window.supabase) {
+        internalSupabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+        console.log("Supabase client initialized in loadInternalReviews");
+      } else {
+        console.error("Supabase client not initialized - missing:", {
+          url: !supabaseUrl,
+          key: !supabaseAnonKey,
+          supabaseLib: !window.supabase,
+          bodyDataset: Object.keys(document.body.dataset),
+          bodyAttrs: Array.from(document.body.attributes).map(a => a.name)
+        });
+        const tbody = document.getElementById("internal-reviews-tbody");
+        if (tbody) {
+          tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Error: Supabase not configured. Please check your configuration.</td></tr>';
+        }
+        return;
       }
-      return;
     }
   }
 
@@ -740,17 +795,27 @@ function replaceMessageInStream(stream, messageId, newMessage) {
 
 // Initialize on page load if authenticated
 function initInternalReviewsOnLoad() {
-  if (sessionStorage.getItem("internal_reviews_authenticated") === "true") {
-    internalReviewsAuthenticated = true;
-    const loginContainer = document.getElementById("internal-login");
-    const contentContainer = document.getElementById("internal-content");
-    if (loginContainer) loginContainer.style.display = "none";
-    if (contentContainer) contentContainer.style.display = "block";
-    initializeInternalReviews();
-  } else {
-    // Setup password protection
-    setupInternalPasswordProtection();
+  // Wait for Supabase library to load
+  if (!window.supabase) {
+    console.log("Waiting for Supabase library to load...");
+    setTimeout(initInternalReviewsOnLoad, 100);
+    return;
   }
+  
+  // Also wait a bit for app.js to initialize its client
+  setTimeout(() => {
+    if (sessionStorage.getItem("internal_reviews_authenticated") === "true") {
+      internalReviewsAuthenticated = true;
+      const loginContainer = document.getElementById("internal-login");
+      const contentContainer = document.getElementById("internal-content");
+      if (loginContainer) loginContainer.style.display = "none";
+      if (contentContainer) contentContainer.style.display = "block";
+      initializeInternalReviews();
+    } else {
+      // Setup password protection
+      setupInternalPasswordProtection();
+    }
+  }, 200);
 }
 
 if (document.readyState === "loading") {
