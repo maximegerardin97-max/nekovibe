@@ -63,6 +63,7 @@ function initializeInternalReviews() {
   setupInternalChat();
   setupInternalCSVUpload();
   setupInternalFilters();
+  setupInternalGraphFilter();
   loadInternalClinics();
   loadInternalReviews();
   updateInternalRatingsGraph();
@@ -374,6 +375,16 @@ function setupInternalCSVUpload() {
   });
 }
 
+// Setup Graph Filter
+function setupInternalGraphFilter() {
+  const graphClinicSelect = document.getElementById("internal-graph-clinic-filter");
+  if (graphClinicSelect) {
+    graphClinicSelect.addEventListener("change", () => {
+      updateInternalRatingsGraph(graphClinicSelect.value);
+    });
+  }
+}
+
 // Filters
 function setupInternalFilters() {
   const applyBtn = document.getElementById("apply-internal-filters");
@@ -466,10 +477,6 @@ async function loadInternalClinics() {
       option.value = clinic;
       option.textContent = clinic;
       graphClinicSelect.appendChild(option);
-    });
-
-    graphClinicSelect.addEventListener("change", () => {
-      updateInternalRatingsGraph(graphClinicSelect.value);
     });
   }
 }
