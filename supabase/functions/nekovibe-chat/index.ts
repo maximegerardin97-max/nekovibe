@@ -198,8 +198,29 @@ async function fetchSummaries(
     }
   }
 
-  // Limit to most relevant 6 summaries
-  return summaries.slice(0, 6);
+  // Also fetch internal review summaries
+  const internalScopes = ["all_time", "latest_upload", "last_week", "last_month"];
+  for (const scope of internalScopes) {
+    const { data } = await supabase
+      .from("internal_review_summaries")
+      .select("*")
+      .eq("scope", scope)
+      .order("last_refreshed_at", { ascending: false })
+      .limit(1)
+      .single();
+
+    if (data) {
+      summaries.push({
+        label: `[Internal Reviews, ${scope}]`,
+        summary_text: data.summary_text,
+        items_covered_count: data.reviews_covered_count,
+        scope: data.scope,
+      });
+    }
+  }
+
+  // Limit to most relevant 8 summaries (increased to include internal)
+  return summaries.slice(0, 8);
 }
 
 async function searchFeedbackItems(
@@ -214,7 +235,9 @@ async function searchFeedbackItems(
     return [];
   }
 
-  // Build search query using full-text search
+  const results: any[] = [];
+
+  // Search feedback_items table
   let query = supabase
     .from("feedback_items")
     .select("id, clinic_id, source_type, text, metadata, created_at")
@@ -230,29 +253,115 @@ async function searchFeedbackItems(
   }
 
   // Use full-text search with keywords
-  // Build OR conditions for each keyword
   const orConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
   query = query.or(orConditions);
-
-  // Order by relevance (could be improved with ranking)
   query = query.order("created_at", { ascending: false });
 
-  const { data, error } = await query;
-
-  if (error) {
-    console.error("Search failed:", error);
-    return [];
+  const { data: feedbackData, error: feedbackError } = await query;
+  if (!feedbackError && feedbackData) {
+    results.push(...feedbackData.map((item: any) => ({
+      id: item.id,
+      clinic_id: item.clinic_id,
+      source_type: item.source_type,
+      text: truncate(item.text, 300),
+      rating: item.metadata?.rating,
+      author: item.metadata?.author_name || item.metadata?.author,
+      date: item.created_at ? new Date(item.created_at).toISOString().split("T")[0] : null,
+      table: "feedback_items",
+    })));
   }
 
-  return (data || []).map((item: any) => ({
-    id: item.id,
-    clinic_id: item.clinic_id,
-    source_type: item.source_type,
-    text: truncate(item.text, 300),
-    rating: item.metadata?.rating,
-    author: item.metadata?.author_name || item.metadata?.author,
-    date: item.created_at ? new Date(item.created_at).toISOString().split("T")[0] : null,
-  }));
+  // Also search internal_reviews table
+  let internalQuery = supabase
+    .from("internal_reviews")
+    .select("id, clinic_name, rating, comment, published_at")
+    .limit(maxSearchResults);
+
+  // Apply clinic filter if specified
+  if (clinics.length > 0) {
+    internalQuery = internalQuery.in("clinic_name", clinics);
+  }
+
+  // Use full-text search with keywords on comment field
+  const internalOrConditions = keywords.map((k) => `comment.ilike.%${k}%`).join(",");
+  internalQuery = internalQuery.or(internalOrConditions);
+  internalQuery = internalQuery.order("published_at", { ascending: false });
+
+  const { data: internalData, error: internalError } = await internalQuery;
+  if (!internalError && internalData) {
+    results.push(...internalData.map((item: any) => ({
+      id: `internal_${item.id}`,
+      clinic_id: item.clinic_name,
+      source_type: "internal_review",
+      text: truncate(item.comment, 300),
+      rating: item.rating,
+      author: null,
+      date: item.published_at ? new Date(item.published_at).toISOString().split("T")[0] : null,
+      table: "internal_reviews",
+    })));
+  }
+
+  // Also search google_reviews table directly (for comprehensive coverage)
+  let googleQuery = supabase
+    .from("google_reviews")
+    .select("id, clinic_name, rating, text, author_name, published_at")
+    .limit(maxSearchResults);
+
+  if (clinics.length > 0) {
+    googleQuery = googleQuery.in("clinic_name", clinics);
+  }
+
+  const googleOrConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
+  googleQuery = googleQuery.or(googleOrConditions);
+  googleQuery = googleQuery.order("published_at", { ascending: false });
+
+  const { data: googleData, error: googleError } = await googleQuery;
+  if (!googleError && googleData) {
+    results.push(...googleData.map((item: any) => ({
+      id: `google_${item.id}`,
+      clinic_id: item.clinic_name,
+      source_type: "google_review",
+      text: truncate(item.text, 300),
+      rating: item.rating,
+      author: item.author_name,
+      date: item.published_at ? new Date(item.published_at).toISOString().split("T")[0] : null,
+      table: "google_reviews",
+    })));
+  }
+
+  // Also search articles table
+  let articlesQuery = supabase
+    .from("articles")
+    .select("id, title, content, description, author, published_at, source")
+    .limit(maxSearchResults);
+
+  const articlesOrConditions = keywords.map((k) => `title.ilike.%${k}%,content.ilike.%${k}%,description.ilike.%${k}%`).join(",");
+  articlesQuery = articlesQuery.or(articlesOrConditions);
+  articlesQuery = articlesQuery.order("published_at", { ascending: false });
+
+  const { data: articlesData, error: articlesError } = await articlesQuery;
+  if (!articlesError && articlesData) {
+    results.push(...articlesData.map((item: any) => ({
+      id: `article_${item.id}`,
+      clinic_id: null,
+      source_type: item.source || "article",
+      text: truncate(item.content || item.description || item.title, 300),
+      rating: null,
+      author: item.author,
+      date: item.published_at ? new Date(item.published_at).toISOString().split("T")[0] : null,
+      table: "articles",
+      title: item.title,
+    })));
+  }
+
+  // Limit total results and sort by date
+  return results
+    .sort((a, b) => {
+      const dateA = a.date ? new Date(a.date).getTime() : 0;
+      const dateB = b.date ? new Date(b.date).getTime() : 0;
+      return dateB - dateA;
+    })
+    .slice(0, maxSearchResults);
 }
 
 function extractKeywords(prompt: string): string[] {
