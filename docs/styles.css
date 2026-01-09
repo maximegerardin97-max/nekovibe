@@ -298,7 +298,8 @@ body {
   font-size: 0.9rem;
 }
 
-#ratings-chart {
+#ratings-chart,
+#internal-ratings-chart {
   max-height: 300px;
 }
 
