@@ -334,16 +334,22 @@ function setupTabSwitching() {
       if (tabInternal) tabInternal.classList.add("active");
       internalView.classList.add("active");
       // Internal tab handles its own initialization
+      if (typeof activateInternalTab === "function") {
+        activateInternalTab();
+      }
     }
   }
   
   tabChat.addEventListener("click", () => switchToTab("chat"));
   tabReviews.addEventListener("click", () => switchToTab("reviews"));
   tabArticles.addEventListener("click", () => switchToTab("articles"));
-  // Don't add listener for internal tab here - it's handled by internal-reviews.js
-  // if (tabInternal) {
-  //   tabInternal.addEventListener("click", () => switchToTab("internal"));
-  // }
+  if (tabInternal) {
+    tabInternal.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      switchToTab("internal");
+    });
+  }
   
   // Default to reviews tab (only if not on internal tab)
   const currentTab = document.querySelector(".tab-button.active");

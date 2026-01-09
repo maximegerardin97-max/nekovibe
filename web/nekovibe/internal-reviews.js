@@ -26,7 +26,6 @@ function initializeInternalReviews() {
   }
 
   setupInternalPasswordProtection();
-  setupInternalTabSwitching();
   setupInternalChat();
   setupInternalCSVUpload();
   setupInternalFilters();
@@ -34,6 +33,9 @@ function initializeInternalReviews() {
   loadInternalReviews();
   updateInternalRatingsGraph();
 }
+
+// Expose function for app.js to call
+window.activateInternalTab = activateInternalTab;
 
 // Password Protection
 function setupInternalPasswordProtection() {
@@ -100,57 +102,31 @@ function setupInternalPasswordProtection() {
   });
 }
 
-// Tab Switching
-function setupInternalTabSwitching() {
+// Called when internal tab is activated
+function activateInternalTab() {
   const tabInternal = document.getElementById("tab-internal");
   const internalView = document.getElementById("internal-view");
-  const tabChat = document.getElementById("tab-chat");
-  const tabReviews = document.getElementById("tab-reviews");
-  const tabArticles = document.getElementById("tab-articles");
-  const chatView = document.getElementById("chat-view");
-  const reviewsView = document.getElementById("reviews-view");
-  const articlesView = document.getElementById("articles-view");
+  const loginContainer = document.getElementById("internal-login");
+  const contentContainer = document.getElementById("internal-content");
 
   if (!tabInternal || !internalView) return;
 
-  // Remove any existing listeners to avoid duplicates
-  const newTabInternal = tabInternal.cloneNode(true);
-  tabInternal.parentNode?.replaceChild(newTabInternal, tabInternal);
-  const freshTabInternal = document.getElementById("tab-internal");
-
-  if (freshTabInternal) {
-    freshTabInternal.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      
-      // Check authentication
-      if (sessionStorage.getItem("internal_reviews_authenticated") !== "true") {
-        // Show login
-        const loginContainer = document.getElementById("internal-login");
-        const contentContainer = document.getElementById("internal-content");
-        if (loginContainer) loginContainer.style.display = "block";
-        if (contentContainer) contentContainer.style.display = "none";
-      }
-
-      // Update tab states
-      if (tabChat) tabChat.classList.remove("active");
-      if (tabReviews) tabReviews.classList.remove("active");
-      if (tabArticles) tabArticles.classList.remove("active");
-      freshTabInternal.classList.add("active");
-
-      // Hide other views
-      if (chatView) chatView.classList.remove("active");
-      if (reviewsView) reviewsView.classList.remove("active");
-      if (articlesView) articlesView.classList.remove("active");
-      if (internalView) internalView.classList.add("active");
-
-      // Load data if authenticated
-      if (internalReviewsAuthenticated || sessionStorage.getItem("internal_reviews_authenticated") === "true") {
-        loadInternalClinics();
-        loadInternalReviews();
-        updateInternalRatingsGraph();
-      }
-    });
+  // Check authentication and show appropriate view
+  if (sessionStorage.getItem("internal_reviews_authenticated") !== "true") {
+    // Show login
+    if (loginContainer) loginContainer.style.display = "block";
+    if (contentContainer) contentContainer.style.display = "none";
+  } else {
+    // Show content
+    if (loginContainer) loginContainer.style.display = "none";
+    if (contentContainer) contentContainer.style.display = "block";
+    
+    // Load data if authenticated
+    if (internalReviewsAuthenticated || sessionStorage.getItem("internal_reviews_authenticated") === "true") {
+      loadInternalClinics();
+      loadInternalReviews();
+      updateInternalRatingsGraph();
+    }
   }
 }
 
