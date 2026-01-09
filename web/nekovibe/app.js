@@ -284,9 +284,11 @@ function setupTabSwitching() {
   const tabChat = document.getElementById("tab-chat");
   const tabReviews = document.getElementById("tab-reviews");
   const tabArticles = document.getElementById("tab-articles");
+  const tabInternal = document.getElementById("tab-internal");
   const chatView = document.getElementById("chat-view");
   const reviewsView = document.getElementById("reviews-view");
   const articlesView = document.getElementById("articles-view");
+  const internalView = document.getElementById("internal-view");
   
   if (!tabChat || !tabReviews || !tabArticles || !chatView || !reviewsView || !articlesView) {
     console.warn("Tab elements not found");
@@ -298,11 +300,13 @@ function setupTabSwitching() {
     tabChat.classList.remove("active");
     tabReviews.classList.remove("active");
     tabArticles.classList.remove("active");
+    if (tabInternal) tabInternal.classList.remove("active");
     
     // Hide all views
     chatView.classList.remove("active");
     reviewsView.classList.remove("active");
     articlesView.classList.remove("active");
+    if (internalView) internalView.classList.remove("active");
     
     if (tabName === "chat") {
       tabChat.classList.add("active");
@@ -326,12 +330,19 @@ function setupTabSwitching() {
       
       // Load articles data when switching to articles tab
       if (typeof loadArticles === "function") loadArticles();
+    } else if (tabName === "internal" && internalView) {
+      if (tabInternal) tabInternal.classList.add("active");
+      internalView.classList.add("active");
+      // Internal tab handles its own initialization
     }
   }
   
   tabChat.addEventListener("click", () => switchToTab("chat"));
   tabReviews.addEventListener("click", () => switchToTab("reviews"));
   tabArticles.addEventListener("click", () => switchToTab("articles"));
+  if (tabInternal) {
+    tabInternal.addEventListener("click", () => switchToTab("internal"));
+  }
   
   // Default to reviews tab
   switchToTab("reviews");

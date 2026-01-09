@@ -32,6 +32,9 @@
           <button id="tab-articles" class="source-pill-button tab-button" type="button">
             Articles / Press / LinkedIn
           </button>
+          <button id="tab-internal" class="source-pill-button tab-button" type="button">
+            Internal Reviews
+          </button>
         </div>
       </header>
 
@@ -267,11 +270,156 @@
             </div>
           </div>
         </div>
+
+        <!-- Internal Reviews View (Password Protected) -->
+        <div id="internal-view" class="tab-content">
+          <div id="internal-login" class="internal-login-container">
+            <div class="login-box">
+              <h2>Internal Reviews</h2>
+              <p>This section is password protected</p>
+              <form id="internal-login-form">
+                <input type="password" id="internal-password" placeholder="Enter password" autocomplete="off" />
+                <button type="submit">Access</button>
+              </form>
+              <p id="internal-login-error" class="error-message" style="display: none;"></p>
+            </div>
+          </div>
+
+          <div id="internal-content" style="display: none;">
+            <div class="reviews-combined-layout">
+              <!-- Top: Chat -->
+              <div class="reviews-chat-section">
+                <section id="internal-chat-stream" aria-live="polite">
+                  <div class="empty-state">
+                    <p>Ask anything about the internal reviews</p>
+                  </div>
+                </section>
+
+                <form id="internal-ask-form">
+                  <div class="input-wrapper">
+                    <textarea
+                      name="internal-prompt"
+                      id="internal-prompt"
+                      rows="1"
+                      placeholder="Ask anything about Neko Health..."
+                      autocomplete="off"
+                    ></textarea>
+                    <button type="submit" aria-label="Send">
+                      <span>Send</span>
+                    </button>
+                  </div>
+                  <div class="chat-actions">
+                    <button type="button" id="analyze-all-btn" class="analyze-btn">
+                      Analyze All Reviews
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- CSV Upload -->
+              <div class="csv-upload-container">
+                <h3>Upload Reviews CSV</h3>
+                <form id="csv-upload-form">
+                  <input type="file" id="csv-file-input" accept=".csv" required />
+                  <button type="submit">Upload CSV</button>
+                </form>
+                <div id="upload-status"></div>
+              </div>
+
+              <!-- Ratings Graph -->
+              <div class="ratings-graph-container">
+                <div class="graph-header">
+                  <h3>Ratings Over Time</h3>
+                  <div class="graph-filter">
+                    <label for="internal-graph-clinic-filter">Clinic:</label>
+                    <select id="internal-graph-clinic-filter">
+                      <option value="">All Clinics</option>
+                    </select>
+                  </div>
+                </div>
+                <canvas id="internal-ratings-chart"></canvas>
+              </div>
+
+              <!-- Bottom: Reviews Table with Filters -->
+              <div class="reviews-container">
+                <!-- Filters -->
+                <div class="reviews-filters">
+                  <div class="filter-group">
+                    <label for="internal-filter-clinic">Clinic</label>
+                    <select id="internal-filter-clinic">
+                      <option value="">All Clinics</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label for="internal-filter-rating">Rating</label>
+                    <select id="internal-filter-rating">
+                      <option value="">All Ratings</option>
+                      <option value="5">5 Stars</option>
+                      <option value="4">4 Stars</option>
+                      <option value="3">3 Stars</option>
+                      <option value="2">2 Stars</option>
+                      <option value="1">1 Star</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label for="internal-filter-date-from">Date From</label>
+                    <input type="date" id="internal-filter-date-from" />
+                  </div>
+                  <div class="filter-group">
+                    <label for="internal-filter-date-to">Date To</label>
+                    <input type="date" id="internal-filter-date-to" />
+                  </div>
+                  <div class="filter-group filter-group-wide">
+                    <label for="internal-filter-comment">Search Comment</label>
+                    <input type="text" id="internal-filter-comment" placeholder="Search in comments..." />
+                  </div>
+                  <div class="filter-actions">
+                    <button id="apply-internal-filters" class="filter-btn">Apply Filters</button>
+                    <button id="clear-internal-filters" class="filter-btn filter-btn-secondary">Clear</button>
+                  </div>
+                </div>
+
+                <!-- Results Info -->
+                <div class="reviews-info">
+                  <span id="internal-reviews-count">Loading reviews...</span>
+                </div>
+
+                <!-- Reviews Table -->
+                <div class="reviews-table-container">
+                  <table class="reviews-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th>
+                        <th>Rating</th>
+                        <th>Clinic</th>
+                        <th>Comment</th>
+                      </tr>
+                    </thead>
+                    <tbody id="internal-reviews-tbody">
+                      <tr>
+                        <td colspan="4" class="loading-state">Loading reviews...</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                <!-- Pagination -->
+                <div class="reviews-pagination">
+                  <button id="prev-internal-page" class="pagination-btn" disabled>Previous</button>
+                  <span id="internal-page-info">Page 1</span>
+                  <button id="next-internal-page" class="pagination-btn">Next</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="module" src="./app.js"></script>
+    <script type="module" src="./internal-reviews.js"></script>
   </body>
 </html>
 
