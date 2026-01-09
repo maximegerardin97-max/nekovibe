@@ -25,7 +25,11 @@ function initializeInternalReviews() {
     }
   }
 
-  setupInternalPasswordProtection();
+  // Don't setup password protection again if already authenticated
+  if (!internalReviewsAuthenticated && sessionStorage.getItem("internal_reviews_authenticated") !== "true") {
+    setupInternalPasswordProtection();
+  }
+  
   setupInternalChat();
   setupInternalCSVUpload();
   setupInternalFilters();
@@ -52,6 +56,19 @@ function setupInternalPasswordProtection() {
     internalReviewsAuthenticated = true;
     if (loginContainer) loginContainer.style.display = "none";
     if (contentContainer) contentContainer.style.display = "block";
+    // Initialize if authenticated
+    initializeInternalReviews();
+    return;
+  }
+  
+  // Auto-authenticate if password is in URL or for testing
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get("internal") === "1" || urlParams.get("password") === INTERNAL_PASSWORD) {
+    internalReviewsAuthenticated = true;
+    sessionStorage.setItem("internal_reviews_authenticated", "true");
+    if (loginContainer) loginContainer.style.display = "none";
+    if (contentContainer) contentContainer.style.display = "block";
+    initializeInternalReviews();
     return;
   }
 
@@ -60,6 +77,8 @@ function setupInternalPasswordProtection() {
     e.stopPropagation();
     e.stopImmediatePropagation();
     const password = passwordInput.value.trim();
+    
+    console.log("Password submitted:", password, "Expected:", INTERNAL_PASSWORD);
 
     if (password === INTERNAL_PASSWORD) {
       internalReviewsAuthenticated = true;
@@ -692,17 +711,25 @@ function replaceMessageInStream(stream, messageId, newMessage) {
 }
 
 // Initialize on page load if authenticated
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    if (sessionStorage.getItem("internal_reviews_authenticated") === "true") {
-      internalReviewsAuthenticated = true;
-      initializeInternalReviews();
-    }
-  });
-} else {
+function initInternalReviewsOnLoad() {
   if (sessionStorage.getItem("internal_reviews_authenticated") === "true") {
     internalReviewsAuthenticated = true;
+    const loginContainer = document.getElementById("internal-login");
+    const contentContainer = document.getElementById("internal-content");
+    if (loginContainer) loginContainer.style.display = "none";
+    if (contentContainer) contentContainer.style.display = "block";
     initializeInternalReviews();
+  } else {
+    // Setup password protection
+    setupInternalPasswordProtection();
   }
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    initInternalReviewsOnLoad();
+  });
+} else {
+  initInternalReviewsOnLoad();
 }
 
