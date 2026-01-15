@@ -214,6 +214,23 @@ body {
   margin: 0;
 }
 
+#reviews-view .chat-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: var(--card-muted);
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+}
+
+#reviews-view .chat-filters .filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
 #reviews-ask-form .input-wrapper {
   display: flex;
   gap: 0.75rem;

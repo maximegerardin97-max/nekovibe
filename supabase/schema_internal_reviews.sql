@@ -46,9 +46,11 @@ CREATE INDEX IF NOT EXISTS idx_internal_reviews_uploaded_at ON internal_reviews(
 CREATE INDEX IF NOT EXISTS idx_internal_reviews_comment_search ON internal_reviews USING gin(to_tsvector('english', comment));
 
 -- Updated_at trigger
+DROP TRIGGER IF EXISTS update_internal_reviews_updated_at ON internal_reviews;
 CREATE TRIGGER update_internal_reviews_updated_at BEFORE UPDATE ON internal_reviews
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_internal_review_summaries_updated_at ON internal_review_summaries;
 CREATE TRIGGER update_internal_review_summaries_updated_at BEFORE UPDATE ON internal_review_summaries
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 

@@ -131,7 +131,7 @@ function renderBubbleContent(bubble, message) {
     const datasetButton = document.createElement("button");
     datasetButton.className = "query-full-dataset-btn";
     datasetButton.innerText = "Query full dataset";
-    datasetButton.onclick = () => queryFullDataset(message.prompt, message.sources, bubble);
+    datasetButton.onclick = () => queryFullDataset(message.prompt, message.sources, bubble, message.filters);
     buttonContainer.appendChild(datasetButton);
     
     bubble.appendChild(buttonContainer);
@@ -202,7 +202,7 @@ async function queryTavily(prompt, bubbleElement) {
   }
 }
 
-async function queryFullDataset(prompt, sources, bubbleElement) {
+async function queryFullDataset(prompt, sources, bubbleElement, filters) {
   // Disable button
   const button = bubbleElement.querySelector(".query-full-dataset-btn");
   if (button) {
@@ -223,10 +223,15 @@ async function queryFullDataset(prompt, sources, bubbleElement) {
       headers.Authorization = `Bearer ${functionKey}`;
     }
     
+    const payload = { prompt, sources, useFallback: true };
+    if (filters && (filters.clinic || filters.dateFrom || filters.dateTo)) {
+      payload.filters = filters;
+    }
+
     const response = await fetch(functionUrl, {
       method: "POST",
       headers,
-      body: JSON.stringify({ prompt, sources, useFallback: true }),
+      body: JSON.stringify(payload),
     });
     
     if (!response.ok) {
@@ -279,6 +284,9 @@ function initSupabaseClient() {
     supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
     // Expose globally for internal-reviews.js
     window.supabaseClient = supabaseClient;
+    if (typeof loadClinics === "function") {
+      loadClinics();
+    }
     return true;
   }
   return false;
@@ -378,6 +386,10 @@ function setupReviewsChat() {
   const reviewsChatStream = document.getElementById("reviews-chat-stream");
   const reviewsForm = document.getElementById("reviews-ask-form");
   const reviewsTextarea = document.getElementById("reviews-prompt");
+  const reviewsClinicFilter = document.getElementById("reviews-chat-clinic-filter");
+  const reviewsDateFrom = document.getElementById("reviews-chat-date-from");
+  const reviewsDateTo = document.getElementById("reviews-chat-date-to");
+  const reviewsClearFilters = document.getElementById("reviews-chat-clear-filters");
   
   if (!reviewsChatStream || !reviewsForm || !reviewsTextarea) {
     console.warn("Reviews chat elements not found");
@@ -388,6 +400,20 @@ function setupReviewsChat() {
     messages: [],
     pending: false,
   };
+  
+  const getReviewsChatFilters = () => {
+    const clinic = reviewsClinicFilter?.value?.trim() || "";
+    const dateFrom = reviewsDateFrom?.value || "";
+    const dateTo = reviewsDateTo?.value || "";
+    if (!clinic && !dateFrom && !dateTo) return null;
+    return { clinic, dateFrom, dateTo };
+  };
+
+  reviewsClearFilters?.addEventListener("click", () => {
+    if (reviewsClinicFilter) reviewsClinicFilter.value = "";
+    if (reviewsDateFrom) reviewsDateFrom.value = "";
+    if (reviewsDateTo) reviewsDateTo.value = "";
+  });
   
   reviewsForm.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -401,6 +427,7 @@ function setupReviewsChat() {
     
     // Always use reviews source for reviews chat
     const sources = ["reviews"];
+    const filters = getReviewsChatFilters();
     
     appendMessageToStream(reviewsChatStream, { role: "user", content: prompt });
     reviewsTextarea.value = "";
@@ -415,10 +442,15 @@ function setupReviewsChat() {
         headers.Authorization = `Bearer ${functionKey}`;
       }
       
+      const payload = { prompt, sources };
+      if (filters) {
+        payload.filters = filters;
+      }
+
       const response = await fetch(functionUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify({ prompt, sources }),
+        body: JSON.stringify(payload),
       });
       
       if (!response.ok) {
@@ -431,7 +463,8 @@ function setupReviewsChat() {
         role: "assistant", 
         content: data.answer ?? "No answer returned.",
         prompt: prompt,
-        sources: sources
+        sources: sources,
+        filters: filters || undefined
       });
     } catch (error) {
       console.error("reviews chat error", error);
@@ -495,10 +528,15 @@ function setupArticlesChat() {
         headers.Authorization = `Bearer ${functionKey}`;
       }
       
+      const payload = { prompt, sources };
+      if (filters) {
+        payload.filters = filters;
+      }
+
       const response = await fetch(functionUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify({ prompt, sources }),
+        body: JSON.stringify(payload),
       });
       
       if (!response.ok) {
@@ -835,7 +873,15 @@ const reviewsState = {
 
 // Load clinics dropdown
 async function loadClinics() {
-  if (!supabaseClient) return;
+  if (!supabaseClient) {
+    if (!loadClinics._retryTimer) {
+      loadClinics._retryTimer = setTimeout(() => {
+        loadClinics._retryTimer = null;
+        loadClinics();
+      }, 200);
+    }
+    return;
+  }
   
   try {
     const { data, error } = await supabaseClient
@@ -845,10 +891,14 @@ async function loadClinics() {
     
     if (error) throw error;
     
-    const uniqueClinics = [...new Set((data || []).map((r) => r.clinic_name))];
-    const clinicSelect = document.getElementById("filter-clinic");
+    const uniqueClinics = [...new Set((data || []).map((r) => r.clinic_name).filter(Boolean))].sort();
+    const clinicSelects = [
+      document.getElementById("filter-clinic"),
+      document.getElementById("reviews-chat-clinic-filter"),
+    ];
     
-    if (clinicSelect) {
+    clinicSelects.forEach((clinicSelect) => {
+      if (!clinicSelect) return;
       // Keep "All Clinics" option, then add unique clinics
       clinicSelect.innerHTML = '<option value="">All Clinics</option>';
       uniqueClinics.forEach((clinic) => {
@@ -857,7 +907,7 @@ async function loadClinics() {
         option.textContent = clinic;
         clinicSelect.appendChild(option);
       });
-    }
+    });
   } catch (error) {
     console.error("Error loading clinics:", error);
   }
@@ -1263,4 +1313,3 @@ async function updateRatingsGraph(clinicFilter = "") {
     }
   });
 }
-

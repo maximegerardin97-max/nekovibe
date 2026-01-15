@@ -14,6 +14,45 @@ const maxSearchResults = Number(Deno.env.get("NEKOVIBE_SEARCH_MAX_RESULTS") ?? "
 const reviewFetchLimit = Number(Deno.env.get("NEKOVIBE_REVIEW_FETCH_LIMIT") ?? "300");
 const chunkSize = Number(Deno.env.get("NEKOVIBE_CHUNK_SIZE") ?? "25");
 
+
+type ReviewFilters = {
+  clinic?: string | string[];
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+function normalizeFilters(filters: ReviewFilters | null | undefined) {
+  const rawClinic = filters?.clinic;
+  const clinicList = Array.isArray(rawClinic) ? rawClinic : rawClinic ? [rawClinic] : [];
+  const clinic = clinicList
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim());
+  const dateFrom = typeof filters?.dateFrom === "string" ? filters.dateFrom : "";
+  const dateTo = typeof filters?.dateTo === "string" ? filters.dateTo : "";
+  return { clinic, dateFrom, dateTo };
+}
+
+function addDays(dateString: string, days: number): string | null {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
+function applyDateRange(query: any, column: string, dateFrom?: string, dateTo?: string) {
+  let nextQuery = query;
+  if (dateFrom) {
+    nextQuery = nextQuery.gte(column, dateFrom);
+  }
+  if (dateTo) {
+    const endDate = addDays(dateTo, 1);
+    if (endDate) {
+      nextQuery = nextQuery.lt(column, endDate);
+    }
+  }
+  return nextQuery;
+}
+
 const CLINIC_MATCHERS = [
   { name: "Neko Health Marylebone", tokens: ["marylebone", "w1"] },
   { name: "Neko Health Spitalfields", tokens: ["spitalfields", "liverpool street"] },
@@ -35,7 +74,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, sources = ["reviews"], useFallback = false } = await req.json();
+    const { prompt, sources = ["reviews"], useFallback = false, filters = null } = await req.json();
     if (!prompt || typeof prompt !== "string") {
       return respond({ error: "prompt is required" }, 400);
     }
@@ -45,19 +84,22 @@ serve(async (req) => {
     });
 
     // Detect clinic and source type from prompt
+    const normalizedFilters = normalizeFilters(filters);
     const detectedClinics = detectClinics(prompt);
     const detectedSourceType = detectSourceType(prompt, sources);
+    const clinics = normalizedFilters.clinic.length ? normalizedFilters.clinic : detectedClinics;
+    const hasDateFilter = Boolean(normalizedFilters.dateFrom || normalizedFilters.dateTo);
 
     // If fallback is requested, run raw data analysis (fast SQL, no LLM)
     if (useFallback) {
-      const fallbackAnswer = await generateFallbackAnswer(supabase, prompt, detectedClinics);
+      const fallbackAnswer = await generateFallbackAnswer(supabase, prompt, clinics, normalizedFilters);
       return respond(
         {
           answer: fallbackAnswer ?? "I couldn't generate a fallback answer right now.",
           usedFallback: true,
           usedSources: ["reviews"],
           model: "raw-data",
-          clinicsConsidered: detectedClinics.length ? detectedClinics : "all clinics",
+          clinicsConsidered: clinics.length ? clinics : "all clinics",
         },
         200,
       );
@@ -69,7 +111,7 @@ serve(async (req) => {
     const onlyArticles = hasArticlesSource && !hasReviewsSource;
 
     // Step 1: Fetch relevant summaries (ONLY if not articles-only)
-    const summaries = onlyArticles ? [] : await fetchSummaries(supabase, detectedClinics, detectedSourceType);
+    const summaries = onlyArticles || hasDateFilter ? [] : await fetchSummaries(supabase, clinics, detectedSourceType);
 
     // Step 1.5: Fetch Tavily/Web insights (ALWAYS if articles selected, REQUIRED if articles-only)
     const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
@@ -86,8 +128,9 @@ serve(async (req) => {
     const searchResults = onlyArticles ? [] : await searchFeedbackItems(
       supabase,
       prompt,
-      detectedClinics,
+      clinics,
       detectedSourceType,
+      normalizedFilters,
     );
 
     // Step 3: Build single LLM prompt with summaries + snippets + Tavily/Web insights
@@ -228,6 +271,7 @@ async function searchFeedbackItems(
   prompt: string,
   clinics: string[],
   sourceType: string | null,
+  filters: { clinic: string[]; dateFrom?: string; dateTo?: string },
 ): Promise<any[]> {
   // Extract keywords from prompt for search
   const keywords = extractKeywords(prompt);
@@ -251,6 +295,8 @@ async function searchFeedbackItems(
   if (sourceType) {
     query = query.eq("source_type", sourceType);
   }
+
+  query = applyDateRange(query, "created_at", filters.dateFrom, filters.dateTo);
 
   // Use full-text search with keywords
   const orConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
@@ -282,6 +328,8 @@ async function searchFeedbackItems(
     internalQuery = internalQuery.in("clinic_name", clinics);
   }
 
+  internalQuery = applyDateRange(internalQuery, "published_at", filters.dateFrom, filters.dateTo);
+
   // Use full-text search with keywords on comment field
   const internalOrConditions = keywords.map((k) => `comment.ilike.%${k}%`).join(",");
   internalQuery = internalQuery.or(internalOrConditions);
@@ -310,6 +358,8 @@ async function searchFeedbackItems(
   if (clinics.length > 0) {
     googleQuery = googleQuery.in("clinic_name", clinics);
   }
+
+  googleQuery = applyDateRange(googleQuery, "published_at", filters.dateFrom, filters.dateTo);
 
   const googleOrConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
   googleQuery = googleQuery.or(googleOrConditions);
@@ -717,6 +767,8 @@ async function countReviews(
   clinicFilter: string[] | null,
   ratingFocus: RatingFocus,
   exactRating?: number,
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<number> {
   let query = supabase.from("google_reviews").select("id", { count: "exact", head: true });
 
@@ -725,6 +777,7 @@ async function countReviews(
   }
 
   query = applyRatingFilter(query, ratingFocus);
+  query = applyDateRange(query, "published_at", dateFrom, dateTo);
 
   if (typeof exactRating === "number") {
     query = query.eq("rating", exactRating);
@@ -756,6 +809,8 @@ async function fetchReviewsForFallback(
   supabase: any,
   clinicFilter: string[] | null,
   ratingFocus: RatingFocus,
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<any[]> {
   let query = supabase
     .from("google_reviews")
@@ -768,6 +823,7 @@ async function fetchReviewsForFallback(
   }
 
   query = applyRatingFilter(query, ratingFocus);
+  query = applyDateRange(query, "published_at", dateFrom, dateTo);
 
   const { data, error } = await query;
   if (error) {
@@ -782,17 +838,18 @@ async function generateFallbackAnswer(
   supabase: any,
   prompt: string,
   clinics: string[],
+  filters: { clinic: string[]; dateFrom?: string; dateTo?: string },
 ): Promise<string | null> {
   const clinicFilter = clinics.length ? clinics : null;
   const ratingFocus = detectRatingFocus(prompt);
 
   const [totalReviews, focusCount, perRatingCounts] = await Promise.all([
-    countReviews(supabase, clinicFilter, "all"),
-    countReviews(supabase, clinicFilter, ratingFocus),
-    Promise.all([1, 2, 3, 4, 5].map((rating) => countReviews(supabase, clinicFilter, "all", rating))),
+    countReviews(supabase, clinicFilter, "all", undefined, filters.dateFrom, filters.dateTo),
+    countReviews(supabase, clinicFilter, ratingFocus, undefined, filters.dateFrom, filters.dateTo),
+    Promise.all([1, 2, 3, 4, 5].map((rating) => countReviews(supabase, clinicFilter, "all", rating, filters.dateFrom, filters.dateTo))),
   ]);
 
-  const reviews = await fetchReviewsForFallback(supabase, clinicFilter, ratingFocus);
+  const reviews = await fetchReviewsForFallback(supabase, clinicFilter, ratingFocus, filters.dateFrom, filters.dateTo);
   if (!reviews.length) {
     return `I couldn't find relevant reviews for that request. Try a different clinic or timeframe.`;
   }

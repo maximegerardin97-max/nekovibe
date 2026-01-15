@@ -260,6 +260,13 @@ function setupInternalChat() {
     }
   });
 
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      form.requestSubmit();
+    }
+  });
+
   // Analyze All button
   if (analyzeAllBtn) {
     analyzeAllBtn.addEventListener("click", async () => {
