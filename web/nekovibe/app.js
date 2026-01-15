@@ -885,7 +885,7 @@ async function loadClinics() {
   
   try {
     const { data, error } = await supabaseClient
-      .from("internal_reviews")
+      .from("google_reviews")
       .select("clinic_name")
       .order("clinic_name");
     
@@ -1198,7 +1198,7 @@ async function loadClinicsForFilter() {
   
   try {
     const { data, error } = await supabaseClient
-      .from("internal_reviews")
+      .from("google_reviews")
       .select("clinic_name")
       .order("clinic_name");
     
