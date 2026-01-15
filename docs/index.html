@@ -317,6 +317,28 @@
                   </div>
                 </section>
 
+                <div class="chat-filters">
+                  <div class="filter-group">
+                    <label for="internal-chat-clinic-filter">Clinic</label>
+                    <select id="internal-chat-clinic-filter">
+                      <option value="">All Clinics</option>
+                    </select>
+                  </div>
+                  <div class="filter-group">
+                    <label for="internal-chat-date-from">Date From</label>
+                    <input type="date" id="internal-chat-date-from" />
+                  </div>
+                  <div class="filter-group">
+                    <label for="internal-chat-date-to">Date To</label>
+                    <input type="date" id="internal-chat-date-to" />
+                  </div>
+                  <div class="filter-actions">
+                    <button type="button" id="internal-chat-clear-filters" class="filter-btn filter-btn-secondary">
+                      Clear Filters
+                    </button>
+                  </div>
+                </div>
+
                 <form id="internal-ask-form">
                   <div class="input-wrapper">
                     <textarea

@@ -214,7 +214,8 @@ body {
   margin: 0;
 }
 
-#reviews-view .chat-filters {
+#reviews-view .chat-filters,
+#internal-view .chat-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 0.75rem;
@@ -225,7 +226,8 @@ body {
   border: 1px solid var(--line-soft);
 }
 
-#reviews-view .chat-filters .filter-actions {
+#reviews-view .chat-filters .filter-actions,
+#internal-view .chat-filters .filter-actions {
   grid-column: 1 / -1;
   display: flex;
   justify-content: flex-end;

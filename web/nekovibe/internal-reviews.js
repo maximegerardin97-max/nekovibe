@@ -199,6 +199,10 @@ function setupInternalChat() {
   const form = document.getElementById("internal-ask-form");
   const textarea = document.getElementById("internal-prompt");
   const analyzeAllBtn = document.getElementById("analyze-all-btn");
+  const chatClinicFilter = document.getElementById("internal-chat-clinic-filter");
+  const chatDateFrom = document.getElementById("internal-chat-date-from");
+  const chatDateTo = document.getElementById("internal-chat-date-to");
+  const chatClearFilters = document.getElementById("internal-chat-clear-filters");
 
   if (!chatStream || !form || !textarea) return;
 
@@ -210,6 +214,20 @@ function setupInternalChat() {
   const functionUrl = document.body.dataset.functionUrl || "";
   const functionKey = document.body.dataset.apikey || "";
 
+  const getInternalChatFilters = () => {
+    const clinic = chatClinicFilter?.value?.trim() || "";
+    const dateFrom = chatDateFrom?.value || "";
+    const dateTo = chatDateTo?.value || "";
+    if (!clinic && !dateFrom && !dateTo) return null;
+    return { clinic, dateFrom, dateTo };
+  };
+
+  chatClearFilters?.addEventListener("click", () => {
+    if (chatClinicFilter) chatClinicFilter.value = "";
+    if (chatDateFrom) chatDateFrom.value = "";
+    if (chatDateTo) chatDateTo.value = "";
+  });
+
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     if (chatState.pending) return;
@@ -218,6 +236,7 @@ function setupInternalChat() {
     if (!prompt) return;
 
     const analyzeAll = false; // Regular query
+    const filters = getInternalChatFilters();
 
     appendMessageToStream(chatStream, { role: "user", content: prompt });
     textarea.value = "";
@@ -233,10 +252,15 @@ function setupInternalChat() {
         headers.Authorization = `Bearer ${functionKey}`;
       }
 
+      const payload = { prompt, analyzeAll };
+      if (filters) {
+        payload.filters = filters;
+      }
+
       const response = await fetch(internalChatUrl, {
         method: "POST",
         headers,
-        body: JSON.stringify({ prompt, analyzeAll }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
@@ -286,10 +310,16 @@ function setupInternalChat() {
           headers.Authorization = `Bearer ${functionKey}`;
         }
 
+        const filters = getInternalChatFilters();
+        const payload = { prompt, analyzeAll: true };
+        if (filters) {
+          payload.filters = filters;
+        }
+
         const response = await fetch(internalChatUrl, {
           method: "POST",
           headers,
-          body: JSON.stringify({ prompt, analyzeAll: true }),
+          body: JSON.stringify(payload),
         });
 
         if (!response.ok) {
@@ -466,26 +496,18 @@ async function loadInternalClinics() {
   const clinics = [...new Set(data.map((r) => r.clinic_name))].sort();
   const clinicSelect = document.getElementById("internal-filter-clinic");
   const graphClinicSelect = document.getElementById("internal-graph-clinic-filter");
+  const chatClinicSelect = document.getElementById("internal-chat-clinic-filter");
 
-  if (clinicSelect) {
-    clinicSelect.innerHTML = '<option value="">All Clinics</option>';
+  [clinicSelect, graphClinicSelect, chatClinicSelect].forEach((selectEl) => {
+    if (!selectEl) return;
+    selectEl.innerHTML = '<option value="">All Clinics</option>';
     clinics.forEach((clinic) => {
       const option = document.createElement("option");
       option.value = clinic;
       option.textContent = clinic;
-      clinicSelect.appendChild(option);
+      selectEl.appendChild(option);
     });
-  }
-
-  if (graphClinicSelect) {
-    graphClinicSelect.innerHTML = '<option value="">All Clinics</option>';
-    clinics.forEach((clinic) => {
-      const option = document.createElement("option");
-      option.value = clinic;
-      option.textContent = clinic;
-      graphClinicSelect.appendChild(option);
-    });
-  }
+  });
 }
 
 // Load Reviews

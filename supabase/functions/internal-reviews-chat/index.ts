@@ -16,13 +16,52 @@ const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const openaiApiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
 const openaiModel = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
 
+
+type ReviewFilters = {
+  clinic?: string | string[];
+  dateFrom?: string;
+  dateTo?: string;
+};
+
+function normalizeFilters(filters: ReviewFilters | null | undefined) {
+  const rawClinic = filters?.clinic;
+  const clinicList = Array.isArray(rawClinic) ? rawClinic : rawClinic ? [rawClinic] : [];
+  const clinic = clinicList
+    .filter((value) => typeof value === "string" && value.trim())
+    .map((value) => value.trim());
+  const dateFrom = typeof filters?.dateFrom === "string" ? filters.dateFrom : "";
+  const dateTo = typeof filters?.dateTo === "string" ? filters.dateTo : "";
+  return { clinic, dateFrom, dateTo };
+}
+
+function addDays(dateString: string, days: number): string | null {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setDate(date.getDate() + days);
+  return date.toISOString();
+}
+
+function applyDateRange(query: any, column: string, dateFrom?: string, dateTo?: string) {
+  let nextQuery = query;
+  if (dateFrom) {
+    nextQuery = nextQuery.gte(column, dateFrom);
+  }
+  if (dateTo) {
+    const endDate = addDays(dateTo, 1);
+    if (endDate) {
+      nextQuery = nextQuery.lt(column, endDate);
+    }
+  }
+  return nextQuery;
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
 
   try {
-    const { prompt, analyzeAll = false } = await req.json();
+    const { prompt, analyzeAll = false, filters = null } = await req.json();
     if (!prompt || typeof prompt !== "string") {
       return respond({ error: "prompt is required" }, 400);
     }
@@ -33,17 +72,26 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
+    const normalizedFilters = normalizeFilters(filters);
+
     // Fetch relevant data based on analyzeAll flag
     let reviews: any[] = [];
     let summaries: any[] = [];
 
     if (analyzeAll) {
       // Get all reviews for comprehensive analysis
-      const { data: allReviews } = await supabase
+      let allQuery = supabase
         .from("internal_reviews")
         .select("published_at, rating, clinic_name, comment")
         .order("published_at", { ascending: false })
         .limit(1000);
+
+      if (normalizedFilters.clinic.length) {
+        allQuery = allQuery.in("clinic_name", normalizedFilters.clinic);
+      }
+      allQuery = applyDateRange(allQuery, "published_at", normalizedFilters.dateFrom, normalizedFilters.dateTo);
+
+      const { data: allReviews } = await allQuery;
       
       reviews = allReviews || [];
     } else {
@@ -56,11 +104,18 @@ serve(async (req) => {
         .single();
 
       if (latestBatch?.upload_batch_id) {
-        const { data: latestReviews } = await supabase
+        let latestQuery = supabase
           .from("internal_reviews")
           .select("published_at, rating, clinic_name, comment")
           .eq("upload_batch_id", latestBatch.upload_batch_id)
           .order("published_at", { ascending: false });
+
+        if (normalizedFilters.clinic.length) {
+          latestQuery = latestQuery.in("clinic_name", normalizedFilters.clinic);
+        }
+        latestQuery = applyDateRange(latestQuery, "published_at", normalizedFilters.dateFrom, normalizedFilters.dateTo);
+
+        const { data: latestReviews } = await latestQuery;
         
         reviews = latestReviews || [];
       }
@@ -71,19 +126,33 @@ serve(async (req) => {
       const monthAgo = new Date();
       monthAgo.setDate(monthAgo.getDate() - 30);
 
-      const { data: weekReviews } = await supabase
+      let weekQuery = supabase
         .from("internal_reviews")
         .select("published_at, rating, clinic_name, comment")
         .gte("published_at", weekAgo.toISOString())
         .order("published_at", { ascending: false })
         .limit(200);
 
-      const { data: monthReviews } = await supabase
+      if (normalizedFilters.clinic.length) {
+        weekQuery = weekQuery.in("clinic_name", normalizedFilters.clinic);
+      }
+      weekQuery = applyDateRange(weekQuery, "published_at", normalizedFilters.dateFrom, normalizedFilters.dateTo);
+
+      const { data: weekReviews } = await weekQuery;
+
+      let monthQuery = supabase
         .from("internal_reviews")
         .select("published_at, rating, clinic_name, comment")
         .gte("published_at", monthAgo.toISOString())
         .order("published_at", { ascending: false })
         .limit(500);
+
+      if (normalizedFilters.clinic.length) {
+        monthQuery = monthQuery.in("clinic_name", normalizedFilters.clinic);
+      }
+      monthQuery = applyDateRange(monthQuery, "published_at", normalizedFilters.dateFrom, normalizedFilters.dateTo);
+
+      const { data: monthReviews } = await monthQuery;
 
       // Combine and deduplicate
       const allRecent = [...(weekReviews || []), ...(monthReviews || [])];
