@@ -23,11 +23,11 @@
           </p>
         </div>
         <div class="source-switcher" role="group" aria-label="Knowledge sources">
-          <button id="tab-internal" class="source-pill-button tab-button active" type="button">
-            🔒 Internal Reviews
-          </button>
-          <button id="tab-reviews" class="source-pill-button tab-button" type="button">
+          <button id="tab-reviews" class="source-pill-button tab-button active" type="button">
             Public Reviews
+          </button>
+          <button id="tab-internal" class="source-pill-button tab-button" type="button">
+            🚧 Internal Reviews
           </button>
         </div>
       </header>
@@ -185,21 +185,12 @@
           </div>
         </div>
 
-        <!-- Internal Reviews View (Password Protected) - DEFAULT -->
-        <div id="internal-view" class="tab-content active">
-          <div id="internal-login" class="internal-login-container">
-            <div class="login-box">
-              <h2>Internal Reviews</h2>
-              <p>This section is password protected</p>
-              <form id="internal-login-form">
-                <input type="password" id="internal-password" placeholder="Enter password" autocomplete="off" />
-                <button type="submit">Access</button>
-              </form>
-              <p id="internal-login-error" class="error-message" style="display: none;"></p>
+        <!-- Internal Reviews View (WIP) -->
+        <div id="internal-view" class="tab-content">
+          <div id="internal-content">
+            <div class="wip-notice">
+              🚧 Work in progress — data and features may be incomplete.
             </div>
-          </div>
-
-          <div id="internal-content" style="display: none;">
             <div class="reviews-combined-layout">
               <div class="reviews-chat-section">
                 <section id="internal-chat-stream" aria-live="polite">

@@ -1,8 +1,6 @@
-// Internal Reviews Tab Functionality
-// Password: nekovibe1
+// Internal Reviews Tab Functionality (WIP — no password)
 
-const INTERNAL_PASSWORD = "nekovibe1";
-let internalReviewsAuthenticated = false;
+let internalReviewsAuthenticated = true; // always open
 let internalSupabaseClient = null;
 let internalRatingsChart = null;
 let internalReviewsPage = 1;
@@ -72,117 +70,16 @@ function initializeInternalReviews() {
 // Expose function for app.js to call
 window.activateInternalTab = activateInternalTab;
 
-// Password Protection
+// No password — content is always accessible (WIP)
 function setupInternalPasswordProtection() {
-  const loginForm = document.getElementById("internal-login-form");
-  const passwordInput = document.getElementById("internal-password");
-  const loginError = document.getElementById("internal-login-error");
-  const loginContainer = document.getElementById("internal-login");
-  const contentContainer = document.getElementById("internal-content");
-
-  if (!loginForm || !passwordInput) return;
-
-  // Check if already authenticated (sessionStorage)
-  if (sessionStorage.getItem("internal_reviews_authenticated") === "true") {
-    internalReviewsAuthenticated = true;
-    if (loginContainer) loginContainer.style.display = "none";
-    if (contentContainer) contentContainer.style.display = "block";
-    // Initialize if authenticated
-    initializeInternalReviews();
-    return;
-  }
-  
-  // Auto-authenticate if password is in URL or for testing
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get("internal") === "1" || urlParams.get("password") === INTERNAL_PASSWORD) {
-    internalReviewsAuthenticated = true;
-    sessionStorage.setItem("internal_reviews_authenticated", "true");
-    if (loginContainer) loginContainer.style.display = "none";
-    if (contentContainer) contentContainer.style.display = "block";
-    initializeInternalReviews();
-    return;
-  }
-
-  loginForm.addEventListener("submit", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    e.stopImmediatePropagation();
-    const password = passwordInput.value.trim();
-    
-    console.log("Password submitted:", password, "Expected:", INTERNAL_PASSWORD);
-
-    if (password === INTERNAL_PASSWORD) {
-      internalReviewsAuthenticated = true;
-      sessionStorage.setItem("internal_reviews_authenticated", "true");
-      if (loginContainer) loginContainer.style.display = "none";
-      if (contentContainer) contentContainer.style.display = "block";
-      if (loginError) loginError.style.display = "none";
-      passwordInput.value = "";
-      
-      // CRITICAL: Set flag IMMEDIATELY to prevent any tab switches
-      window._stayOnInternalTab = true;
-      
-      // Ensure internal tab stays active - do this synchronously
-      const tabInternal = document.getElementById("tab-internal");
-      const internalView = document.getElementById("internal-view");
-      const tabReviews = document.getElementById("tab-reviews");
-      const reviewsView = document.getElementById("reviews-view");
-
-      // Force tab states - keep internal tab active
-      if (tabReviews) tabReviews.classList.remove("active");
-      if (tabInternal) {
-        tabInternal.classList.add("active");
-      }
-
-      // Force view states - keep internal view active
-      if (reviewsView) reviewsView.classList.remove("active");
-      if (internalView) {
-        internalView.classList.add("active");
-      }
-      
-      // Initialize functionality
-      initializeInternalReviews();
-      
-      // Keep flag set permanently while on internal tab
-      // Only clear it when user explicitly clicks another tab
-    } else {
-      if (loginError) {
-        loginError.textContent = "Incorrect password";
-        loginError.style.display = "block";
-      }
-      passwordInput.value = "";
-    }
-    
-    return false;
-  });
+  initializeInternalReviews();
 }
 
 // Called when internal tab is activated
 function activateInternalTab() {
-  const tabInternal = document.getElementById("tab-internal");
-  const internalView = document.getElementById("internal-view");
-  const loginContainer = document.getElementById("internal-login");
-  const contentContainer = document.getElementById("internal-content");
-
-  if (!tabInternal || !internalView) return;
-
-  // Check authentication and show appropriate view
-  if (sessionStorage.getItem("internal_reviews_authenticated") !== "true") {
-    // Show login
-    if (loginContainer) loginContainer.style.display = "block";
-    if (contentContainer) contentContainer.style.display = "none";
-  } else {
-    // Show content
-    if (loginContainer) loginContainer.style.display = "none";
-    if (contentContainer) contentContainer.style.display = "block";
-    
-    // Load data if authenticated
-    if (internalReviewsAuthenticated || sessionStorage.getItem("internal_reviews_authenticated") === "true") {
-      loadInternalClinics();
-      loadInternalReviews();
-      updateInternalRatingsGraph();
-    }
-  }
+  loadInternalClinics();
+  loadInternalReviews();
+  updateInternalRatingsGraph();
 }
 
 // Internal Chat

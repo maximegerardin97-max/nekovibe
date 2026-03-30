@@ -63,7 +63,7 @@ function setupTabSwitching() {
     switchToTab("internal");
   });
 
-  switchToTab("internal");
+  switchToTab("reviews");
 }
 
 // ===== Chat Helpers =====
