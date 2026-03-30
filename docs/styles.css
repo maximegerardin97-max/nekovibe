@@ -1027,3 +1027,67 @@ button[type="submit"]:hover {
   text-align: center;
 }
 
+/* Graph Controls - Period Toggle */
+.graph-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.graph-period-toggle {
+  display: flex;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.toggle-btn {
+  padding: 0.4rem 0.85rem;
+  border: none;
+  background: var(--card-bg);
+  color: var(--text-subtle);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-base);
+  font-family: inherit;
+}
+
+.toggle-btn:not(:last-child) {
+  border-right: 1px solid var(--line-soft);
+}
+
+.toggle-btn.active {
+  background: var(--accent-blue);
+  color: #fff;
+}
+
+.toggle-btn:hover:not(.active) {
+  background: var(--card-muted);
+}
+
+/* Source Badges */
+.source-badge {
+  display: inline-block;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.source-google {
+  background: rgba(66, 133, 244, 0.12);
+  color: #4285f4;
+}
+
+.source-trustpilot {
+  background: rgba(0, 182, 122, 0.12);
+  color: #00b67a;
+}
+
+.review-source {
+  white-space: nowrap;
+}
+

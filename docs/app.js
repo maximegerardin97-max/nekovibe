@@ -1,583 +1,79 @@
-const chatStream = document.getElementById("chat-stream");
-const form = document.getElementById("ask-form");
-const textarea = document.getElementById("prompt");
 const functionUrl = document.body.dataset.functionUrl || "";
 const functionKey = document.body.dataset.apikey || "";
 
-const state = {
-  messages: [],
-  pending: false,
-};
-
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (state.pending) return;
-
-  const prompt = textarea.value.trim();
-  if (!prompt) {
-    textarea.focus();
-    return;
-  }
-
-  // Neko chat uses all sources by default
-  const sources = ["reviews", "articles"];
-
-  appendMessage({ role: "user", content: prompt });
-  textarea.value = "";
-
-  const loadingId = appendMessage({ role: "assistant", content: "Thinking…" }, true);
-  state.pending = true;
-
-  try {
-    const headers = { "Content-Type": "application/json" };
-    if (functionKey) {
-      headers.apikey = functionKey;
-      headers.Authorization = `Bearer ${functionKey}`;
-    }
-
-    const response = await fetch(functionUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ prompt, sources }),
-    });
-
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-
-    const data = await response.json();
-    
-    // Always show answer with "Query full dataset" button
-    replaceMessage(loadingId, { 
-      role: "assistant", 
-      content: data.answer ?? "No answer returned.",
-      prompt: prompt, // Store prompt for fallback button
-      sources: sources
-    });
-  } catch (error) {
-    console.error("nekovibe chat error", error);
-    replaceMessage(loadingId, {
-      role: "assistant",
-      content: "I couldn't reach Nekovibe right now. Double-check the edge function URL and try again.",
-    });
-  } finally {
-    state.pending = false;
-    textarea.focus();
-  }
-});
-
-textarea.addEventListener("keydown", (event) => {
-  if (event.key === "Enter" && !event.shiftKey) {
-    event.preventDefault();
-    form.requestSubmit();
-  }
-});
-
-function appendMessage(message, isTemporary = false) {
-  const bubble = document.createElement("div");
-  bubble.classList.add("chat-bubble", message.role === "user" ? "user" : "assistant");
-  bubble.dataset.messageId = isTemporary ? createId() : "";
-  bubble.classList.add("chat-bubble--enter");
-  
-  if (isTemporary && message.role === "assistant") {
-    bubble.classList.add("pending");
-    bubble.innerHTML = `
-      <div class="bubble-spinner" aria-hidden="true"></div>
-      <span>${message.content}</span>
-    `;
-  } else {
-    renderBubbleContent(bubble, { ...message, isTemporary });
-  }
-  
-  chatStream.appendChild(bubble);
-  chatStream.scrollTop = chatStream.scrollHeight;
-  return bubble.dataset.messageId || null;
-}
-
-function replaceMessage(messageId, newMessage) {
-  const bubble = chatStream.querySelector(`[data-message-id="${messageId}"]`);
-  if (!bubble) {
-    appendMessage(newMessage);
-    return;
-  }
-  bubble.className = `chat-bubble ${newMessage.role === "user" ? "user" : "assistant"}`;
-  bubble.classList.remove("pending");
-  bubble.classList.add("chat-bubble--enter");
-  renderBubbleContent(bubble, newMessage);
-  delete bubble.dataset.messageId;
-}
-
-function renderBubbleContent(bubble, message) {
-  bubble.innerHTML = "";
-  
-  if (message.role === "assistant" && message.prompt && !message.isTemporary) {
-    const contentDiv = document.createElement("div");
-    contentDiv.textContent = message.content;
-    bubble.appendChild(contentDiv);
-    
-    const buttonContainer = document.createElement("div");
-    buttonContainer.className = "button-container";
-    
-            // Only show Tavily button if "articles" source is selected
-            const hasArticlesSource = message.sources && message.sources.includes("articles");
-            if (hasArticlesSource) {
-              const tavilyButton = document.createElement("button");
-              tavilyButton.className = "query-perplexity-btn";
-              tavilyButton.innerText = "Run another web search";
-              tavilyButton.onclick = () => queryTavily(message.prompt, bubble);
-              buttonContainer.appendChild(tavilyButton);
-            }
-    
-    const datasetButton = document.createElement("button");
-    datasetButton.className = "query-full-dataset-btn";
-    datasetButton.innerText = "Query full dataset";
-    datasetButton.onclick = () => queryFullDataset(message.prompt, message.sources, bubble, message.filters);
-    buttonContainer.appendChild(datasetButton);
-    
-    bubble.appendChild(buttonContainer);
-    return;
-  }
-  
-  const content = document.createElement("div");
-  content.textContent = message.content;
-  bubble.appendChild(content);
-}
-
-async function queryTavily(prompt, bubbleElement) {
-  // Find and disable button
-  const button = bubbleElement.querySelector(".query-perplexity-btn");
-  if (button) {
-    button.disabled = true;
-    button.innerText = "Searching web...";
-  }
-  
-  // Add loading message
-  const loadingId = appendMessage({ 
-    role: "assistant", 
-    content: "Searching the web for latest news and articles... This may take 10-20 seconds." 
-  }, true);
-  
-  try {
-    const headers = { "Content-Type": "application/json" };
-    if (functionKey) {
-      headers.apikey = functionKey;
-      headers.Authorization = `Bearer ${functionKey}`;
-    }
-    
-    // Construct Tavily function URL (same base as chat function)
-    const tavilyUrl = functionUrl.replace('/nekovibe-chat', '/tavily-query');
-    
-    const response = await fetch(tavilyUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ prompt }),
-    });
-    
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-    
-    const data = await response.json();
-    replaceMessage(loadingId, { 
-      role: "assistant", 
-      content: data.answer ?? "No answer returned." 
-    });
-    
-    // Remove button from original message
-    if (button) {
-      button.remove();
-    }
-  } catch (error) {
-    console.error("tavily query error", error);
-    replaceMessage(loadingId, {
-      role: "assistant",
-      content: "Couldn't search the web. Please try again.",
-    });
-    
-    // Re-enable button
-    if (button) {
-      button.disabled = false;
-      button.innerText = "Run another web search";
-    }
-  }
-}
-
-async function queryFullDataset(prompt, sources, bubbleElement, filters) {
-  // Disable button
-  const button = bubbleElement.querySelector(".query-full-dataset-btn");
-  if (button) {
-    button.disabled = true;
-    button.innerText = "Querying full dataset...";
-  }
-  
-  // Add loading message
-  const loadingId = appendMessage({ 
-    role: "assistant", 
-    content: "Computing detailed answer from all reviews... This may take 30-60 seconds." 
-  }, true);
-  
-  try {
-    const headers = { "Content-Type": "application/json" };
-    if (functionKey) {
-      headers.apikey = functionKey;
-      headers.Authorization = `Bearer ${functionKey}`;
-    }
-    
-    const payload = { prompt, sources, useFallback: true };
-    if (filters && (filters.clinic || filters.dateFrom || filters.dateTo)) {
-      payload.filters = filters;
-    }
-
-    const response = await fetch(functionUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-    
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-    
-    const data = await response.json();
-    replaceMessage(loadingId, { 
-      role: "assistant", 
-      content: data.answer ?? "No answer returned." 
-    });
-    
-    // Remove button from original message
-    if (button) {
-      button.remove();
-    }
-  } catch (error) {
-    console.error("fallback error", error);
-    replaceMessage(loadingId, {
-      role: "assistant",
-      content: "Couldn't compute detailed answer. Please try again.",
-    });
-    
-    // Re-enable button
-    if (button) {
-      button.disabled = false;
-      button.innerText = "Query full dataset";
-    }
-  }
-}
-
-function createId() {
-  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
-  return `temp-${Math.random().toString(36).slice(2, 10)}`;
-}
-
-// ===== Reviews View Functionality =====
+// ===== Supabase Initialization =====
 
 const supabaseUrl = document.body.dataset.supabaseUrl || "";
 const supabaseKey = document.body.dataset.apikey || "";
 
 let supabaseClient = null;
-
-// Expose supabaseClient globally for internal-reviews.js
 window.supabaseClient = null;
 
-// Initialize Supabase client when library is loaded
 function initSupabaseClient() {
   if (supabaseUrl && supabaseKey && typeof supabase !== "undefined") {
     supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
-    // Expose globally for internal-reviews.js
     window.supabaseClient = supabaseClient;
-    if (typeof loadClinics === "function") {
-      loadClinics();
-    }
+    if (typeof loadClinics === "function") loadClinics();
     return true;
   }
   return false;
 }
 
-// Tab switching
+// ===== Tab Switching =====
 function setupTabSwitching() {
-  const tabChat = document.getElementById("tab-chat");
   const tabReviews = document.getElementById("tab-reviews");
-  const tabArticles = document.getElementById("tab-articles");
   const tabInternal = document.getElementById("tab-internal");
-  const chatView = document.getElementById("chat-view");
   const reviewsView = document.getElementById("reviews-view");
-  const articlesView = document.getElementById("articles-view");
   const internalView = document.getElementById("internal-view");
-  
-  if (!tabChat || !tabReviews || !tabArticles || !chatView || !reviewsView || !articlesView) {
+
+  if (!tabReviews || !tabInternal || !reviewsView || !internalView) {
     console.warn("Tab elements not found");
     return;
   }
-  
+
   function switchToTab(tabName) {
-    // Update button states
-    tabChat.classList.remove("active");
     tabReviews.classList.remove("active");
-    tabArticles.classList.remove("active");
-    if (tabInternal) tabInternal.classList.remove("active");
-    
-    // Hide all views
-    chatView.classList.remove("active");
+    tabInternal.classList.remove("active");
     reviewsView.classList.remove("active");
-    articlesView.classList.remove("active");
-    if (internalView) internalView.classList.remove("active");
-    
-    if (tabName === "chat") {
-      tabChat.classList.add("active");
-      chatView.classList.add("active");
-    } else if (tabName === "reviews") {
+    internalView.classList.remove("active");
+
+    if (tabName === "reviews") {
       tabReviews.classList.add("active");
       reviewsView.classList.add("active");
-      
-      // Load reviews data when switching to reviews tab
       if (typeof loadClinics === "function") loadClinics();
       if (typeof loadReviews === "function") loadReviews();
-      
-      // Load and update ratings graph
       if (typeof updateRatingsGraph === "function") {
         const graphFilter = document.getElementById("graph-clinic-filter");
         updateRatingsGraph(graphFilter?.value || "");
       }
-    } else if (tabName === "articles") {
-      tabArticles.classList.add("active");
-      articlesView.classList.add("active");
-      
-      // Load articles data when switching to articles tab
-      if (typeof loadArticles === "function") loadArticles();
-    } else if (tabName === "internal" && internalView) {
-      if (tabInternal) tabInternal.classList.add("active");
+    } else if (tabName === "internal") {
+      tabInternal.classList.add("active");
       internalView.classList.add("active");
-      // Internal tab handles its own initialization
-      if (typeof activateInternalTab === "function") {
-        activateInternalTab();
-      }
+      if (typeof activateInternalTab === "function") activateInternalTab();
     }
   }
-  
-  tabChat.addEventListener("click", () => {
-    window._stayOnInternalTab = false; // Clear flag when switching away
-    switchToTab("chat");
-  });
+
   tabReviews.addEventListener("click", () => {
-    window._stayOnInternalTab = false; // Clear flag when switching away
+    window._stayOnInternalTab = false;
     switchToTab("reviews");
   });
-  tabArticles.addEventListener("click", () => {
-    window._stayOnInternalTab = false; // Clear flag when switching away
-    switchToTab("articles");
-  });
-  if (tabInternal) {
-    tabInternal.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      switchToTab("internal");
-    });
-  }
-  
-  // Default to INTERNAL REVIEWS tab (always)
-  const currentTab = document.querySelector(".tab-button.active");
-  if (!currentTab || currentTab.id !== "tab-internal") {
-    // Switch to internal tab by default
+  tabInternal.addEventListener("click", (e) => {
+    e.preventDefault();
+    e.stopPropagation();
     switchToTab("internal");
-  }
+  });
+
+  switchToTab("internal");
 }
 
-// Setup reviews chat (same as main chat but always uses reviews source)
-function setupReviewsChat() {
-  const reviewsChatStream = document.getElementById("reviews-chat-stream");
-  const reviewsForm = document.getElementById("reviews-ask-form");
-  const reviewsTextarea = document.getElementById("reviews-prompt");
-  const reviewsClinicFilter = document.getElementById("reviews-chat-clinic-filter");
-  const reviewsDateFrom = document.getElementById("reviews-chat-date-from");
-  const reviewsDateTo = document.getElementById("reviews-chat-date-to");
-  const reviewsClearFilters = document.getElementById("reviews-chat-clear-filters");
-  
-  if (!reviewsChatStream || !reviewsForm || !reviewsTextarea) {
-    console.warn("Reviews chat elements not found");
-    return;
-  }
-  
-  const reviewsChatState = {
-    messages: [],
-    pending: false,
-  };
-  
-  const getReviewsChatFilters = () => {
-    const clinic = reviewsClinicFilter?.value?.trim() || "";
-    const dateFrom = reviewsDateFrom?.value || "";
-    const dateTo = reviewsDateTo?.value || "";
-    if (!clinic && !dateFrom && !dateTo) return null;
-    return { clinic, dateFrom, dateTo };
-  };
+// ===== Chat Helpers =====
 
-  reviewsClearFilters?.addEventListener("click", () => {
-    if (reviewsClinicFilter) reviewsClinicFilter.value = "";
-    if (reviewsDateFrom) reviewsDateFrom.value = "";
-    if (reviewsDateTo) reviewsDateTo.value = "";
-  });
-  
-  reviewsForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (reviewsChatState.pending) return;
-    
-    const prompt = reviewsTextarea.value.trim();
-    if (!prompt) {
-      reviewsTextarea.focus();
-      return;
-    }
-    
-    // Always use reviews source for reviews chat
-    const sources = ["reviews"];
-    const filters = getReviewsChatFilters();
-    
-    appendMessageToStream(reviewsChatStream, { role: "user", content: prompt });
-    reviewsTextarea.value = "";
-    
-    const loadingId = appendMessageToStream(reviewsChatStream, { role: "assistant", content: "Thinking…" }, true);
-    reviewsChatState.pending = true;
-    
-    try {
-      const headers = { "Content-Type": "application/json" };
-      if (functionKey) {
-        headers.apikey = functionKey;
-        headers.Authorization = `Bearer ${functionKey}`;
-      }
-      
-      const payload = { prompt, sources };
-      if (filters) {
-        payload.filters = filters;
-      }
-
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      
-      const data = await response.json();
-      
-      replaceMessageInStream(reviewsChatStream, loadingId, { 
-        role: "assistant", 
-        content: data.answer ?? "No answer returned.",
-        prompt: prompt,
-        sources: sources,
-        filters: filters || undefined
-      });
-    } catch (error) {
-      console.error("reviews chat error", error);
-      replaceMessageInStream(reviewsChatStream, loadingId, {
-        role: "assistant",
-        content: "I couldn't reach Nekovibe right now. Please try again.",
-      });
-    } finally {
-      reviewsChatState.pending = false;
-      reviewsTextarea.focus();
-    }
-  });
-  
-  reviewsTextarea.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      reviewsForm.requestSubmit();
-    }
-  });
-}
-
-// Setup articles chat (same as reviews chat but always uses articles source)
-function setupArticlesChat() {
-  const articlesChatStream = document.getElementById("articles-chat-stream");
-  const articlesForm = document.getElementById("articles-ask-form");
-  const articlesTextarea = document.getElementById("articles-prompt");
-  
-  if (!articlesChatStream || !articlesForm || !articlesTextarea) {
-    console.warn("Articles chat elements not found");
-    return;
-  }
-  
-  const articlesChatState = {
-    messages: [],
-    pending: false,
-  };
-  
-  articlesForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (articlesChatState.pending) return;
-    
-    const prompt = articlesTextarea.value.trim();
-    if (!prompt) {
-      articlesTextarea.focus();
-      return;
-    }
-    
-    // Always use articles source for articles chat
-    const sources = ["articles"];
-    
-    appendMessageToStream(articlesChatStream, { role: "user", content: prompt });
-    articlesTextarea.value = "";
-    
-    const loadingId = appendMessageToStream(articlesChatStream, { role: "assistant", content: "Thinking…" }, true);
-    articlesChatState.pending = true;
-    
-    try {
-      const headers = { "Content-Type": "application/json" };
-      if (functionKey) {
-        headers.apikey = functionKey;
-        headers.Authorization = `Bearer ${functionKey}`;
-      }
-      
-      const payload = { prompt, sources };
-      if (filters) {
-        payload.filters = filters;
-      }
-
-      const response = await fetch(functionUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        throw new Error(await response.text());
-      }
-      
-      const data = await response.json();
-      
-      replaceMessageInStream(articlesChatStream, loadingId, { 
-        role: "assistant", 
-        content: data.answer ?? "No answer returned.",
-        prompt: prompt,
-        sources: sources
-      });
-    } catch (error) {
-      console.error("articles chat error", error);
-      replaceMessageInStream(articlesChatStream, loadingId, {
-        role: "assistant",
-        content: "I couldn't reach Nekovibe right now. Please try again.",
-      });
-    } finally {
-      articlesChatState.pending = false;
-      articlesTextarea.focus();
-    }
-  });
-  
-  articlesTextarea.addEventListener("keydown", (event) => {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      articlesForm.requestSubmit();
-    }
-  });
-}
-
-// Helper functions for reviews chat stream
 function appendMessageToStream(stream, message, isTemporary = false) {
   const bubble = document.createElement("div");
   bubble.classList.add("chat-bubble", message.role === "user" ? "user" : "assistant");
   bubble.dataset.messageId = isTemporary ? createId() : "";
   bubble.classList.add("chat-bubble--enter");
-  
+
   if (isTemporary && message.role === "assistant") {
     bubble.classList.add("pending");
     bubble.innerHTML = `
@@ -587,7 +83,7 @@ function appendMessageToStream(stream, message, isTemporary = false) {
   } else {
     renderBubbleContent(bubble, { ...message, isTemporary });
   }
-  
+
   stream.appendChild(bubble);
   stream.scrollTop = stream.scrollHeight;
   return bubble.dataset.messageId || null;
@@ -606,306 +102,176 @@ function replaceMessageInStream(stream, messageId, newMessage) {
   delete bubble.dataset.messageId;
 }
 
-// Expose functions globally for internal-reviews.js
 window.appendMessageToStream = appendMessageToStream;
 window.replaceMessageInStream = replaceMessageInStream;
 
-// Articles state
-const articlesState = {
-  currentPage: 1,
-  pageSize: 50,
-  filters: {
-    source: "",
-    dateFrom: "",
-    dateTo: "",
-    text: "",
-  },
-};
+function renderBubbleContent(bubble, message) {
+  bubble.innerHTML = "";
 
-// Load articles with filters
-async function loadArticles() {
-  if (!supabaseClient) {
-    updateArticlesTable([], "Supabase client not initialized. Please check your configuration.");
+  if (message.role === "assistant" && message.prompt && !message.isTemporary) {
+    const contentDiv = document.createElement("div");
+    contentDiv.textContent = message.content;
+    bubble.appendChild(contentDiv);
+
+    const buttonContainer = document.createElement("div");
+    buttonContainer.className = "button-container";
+
+    const datasetButton = document.createElement("button");
+    datasetButton.className = "query-full-dataset-btn";
+    datasetButton.innerText = "Query full dataset";
+    datasetButton.onclick = () => queryFullDataset(message.prompt, message.sources, bubble, message.filters);
+    buttonContainer.appendChild(datasetButton);
+
+    bubble.appendChild(buttonContainer);
     return;
   }
-  
-  const tbody = document.getElementById("articles-tbody");
-  const countSpan = document.getElementById("articles-count");
-  
-  if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="5" class="loading-state">Loading articles...</td></tr>';
-  }
-  
+
+  const content = document.createElement("div");
+  content.textContent = message.content;
+  bubble.appendChild(content);
+}
+
+async function queryFullDataset(prompt, sources, bubbleElement, filters) {
+  const button = bubbleElement.querySelector(".query-full-dataset-btn");
+  if (button) { button.disabled = true; button.innerText = "Querying full dataset..."; }
+
+  const reviewsChatStream = document.getElementById("reviews-chat-stream");
+  const loadingId = appendMessageToStream(reviewsChatStream, {
+    role: "assistant",
+    content: "Computing detailed answer from all reviews… This may take 30–60 seconds.",
+  }, true);
+
   try {
-    let query = supabaseClient
-      .from("articles")
-      .select("published_at, source, title, author, url, description, metadata", { count: "exact" });
-    
-    // Apply filters
-    if (articlesState.filters.source) {
-      query = query.eq("source", articlesState.filters.source);
-    }
-    
-    if (articlesState.filters.dateFrom) {
-      query = query.gte("published_at", articlesState.filters.dateFrom);
-    }
-    
-    if (articlesState.filters.dateTo) {
-      const endDate = new Date(articlesState.filters.dateTo);
-      endDate.setDate(endDate.getDate() + 1);
-      query = query.lt("published_at", endDate.toISOString().split("T")[0]);
-    }
-    
-    if (articlesState.filters.text) {
-      query = query.or(`title.ilike.%${articlesState.filters.text}%,content.ilike.%${articlesState.filters.text}%`);
-    }
-    
-    // Order by date (newest first)
-    query = query.order("published_at", { ascending: false });
-    
-    // Pagination
-    const from = (articlesState.currentPage - 1) * articlesState.pageSize;
-    const to = from + articlesState.pageSize - 1;
-    query = query.range(from, to);
-    
-    const { data, error, count } = await query;
-    
-    if (error) throw error;
-    
-    // Update count
-    if (countSpan) {
-      const total = count || 0;
-      const start = total > 0 ? from + 1 : 0;
-      const end = Math.min(from + articlesState.pageSize, total);
-      countSpan.textContent = `Showing ${start}-${end} of ${total} articles`;
-    }
-    
-    // Update pagination buttons
-    const prevPageBtn = document.getElementById("prev-article-page");
-    const nextPageBtn = document.getElementById("next-article-page");
-    
-    if (prevPageBtn) {
-      prevPageBtn.disabled = articlesState.currentPage === 1;
-    }
-    if (nextPageBtn) {
-      const total = count || 0;
-      const maxPage = Math.ceil(total / articlesState.pageSize);
-      nextPageBtn.disabled = articlesState.currentPage >= maxPage;
-    }
-    
-    // Update page info
-    const pageInfo = document.getElementById("article-page-info");
-    if (pageInfo) {
-      const total = count || 0;
-      const maxPage = Math.ceil(total / articlesState.pageSize);
-      pageInfo.textContent = `Page ${articlesState.currentPage} of ${maxPage || 1}`;
-    }
-    
-    updateArticlesTable(data || [], null);
+    const headers = { "Content-Type": "application/json" };
+    if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
+    const payload = { prompt, sources, useFallback: true };
+    if (filters && (filters.clinic || filters.dateFrom || filters.dateTo)) payload.filters = filters;
+
+    const response = await fetch(functionUrl, { method: "POST", headers, body: JSON.stringify(payload) });
+    if (!response.ok) throw new Error(await response.text());
+
+    const data = await response.json();
+    replaceMessageInStream(reviewsChatStream, loadingId, {
+      role: "assistant",
+      content: data.answer ?? "No answer returned.",
+    });
+    if (button) button.remove();
   } catch (error) {
-    console.error("Error loading articles:", error);
-    updateArticlesTable([], `Error loading articles: ${error.message}`);
+    console.error("fallback error", error);
+    replaceMessageInStream(reviewsChatStream, loadingId, {
+      role: "assistant",
+      content: "Couldn't compute detailed answer. Please try again.",
+    });
+    if (button) { button.disabled = false; button.innerText = "Query full dataset"; }
   }
 }
 
-function updateArticlesTable(articles, errorMessage) {
-  const tbody = document.getElementById("articles-tbody");
-  if (!tbody) return;
-  
-  if (errorMessage) {
-    tbody.innerHTML = `<tr><td colspan="5" class="error-state">${errorMessage}</td></tr>`;
-    return;
-  }
-  
-  if (articles.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No articles found matching your filters.</td></tr>';
-    return;
-  }
-  
-  tbody.innerHTML = articles
-    .map((article) => {
-      let date = "N/A";
-      if (article.published_at) {
-        try {
-          const dateObj = new Date(article.published_at);
-          // Check if date is valid
-          if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() > 2000) {
-            date = dateObj.toLocaleDateString("en-US", {
-              year: "numeric",
-              month: "short",
-              day: "numeric",
-            });
-          } else {
-            date = "Invalid date";
-          }
-        } catch (error) {
-          date = "Invalid date";
-        }
-      }
-      
-      // Format source with post type for LinkedIn
-      let sourceDisplay = article.source || "Unknown";
-      if (article.source === "linkedin" && article.metadata?.post_type) {
-        const postType = article.metadata.post_type === "company_post" ? "Company" : "Organic";
-        sourceDisplay = `LinkedIn (${postType})`;
-      }
-      
-      const title = article.title || "Untitled";
-      const author = article.author || "Unknown";
-      const url = article.url || "#";
-      
-      // Get summary from metadata
-      const summary = article.metadata?.summary || article.description || "";
-      const summaryDisplay = summary 
-        ? `<div class="article-summary">${escapeHtml(summary.substring(0, 200))}${summary.length > 200 ? "..." : ""}</div>`
-        : '<span class="text-muted">No summary available</span>';
-      
-      return `
-        <tr>
-          <td class="review-date">${date}</td>
-          <td class="review-clinic">${escapeHtml(sourceDisplay)}</td>
-          <td class="review-comment"><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${escapeHtml(title)}</a></td>
-          <td class="review-clinic">${escapeHtml(author)}</td>
-          <td class="article-summary-cell">${summaryDisplay}</td>
-        </tr>
-      `;
-    })
-    .join("");
+function createId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) return crypto.randomUUID();
+  return `temp-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-// Setup articles view functionality
-function setupArticlesView() {
-  const filterSource = document.getElementById("filter-article-source");
-  const filterDateFrom = document.getElementById("filter-article-date-from");
-  const filterDateTo = document.getElementById("filter-article-date-to");
-  const filterText = document.getElementById("filter-article-text");
-  const applyFiltersBtn = document.getElementById("apply-article-filters");
-  const clearFiltersBtn = document.getElementById("clear-article-filters");
-  
-  applyFiltersBtn?.addEventListener("click", () => {
-    articlesState.filters = {
-      source: filterSource?.value || "",
-      dateFrom: filterDateFrom?.value || "",
-      dateTo: filterDateTo?.value || "",
-      text: filterText?.value || "",
-    };
-    articlesState.currentPage = 1;
-    loadArticles();
+// ===== Reviews Chat =====
+function setupReviewsChat() {
+  const reviewsChatStream = document.getElementById("reviews-chat-stream");
+  const reviewsForm = document.getElementById("reviews-ask-form");
+  const reviewsTextarea = document.getElementById("reviews-prompt");
+  const reviewsClinicFilter = document.getElementById("reviews-chat-clinic-filter");
+  const reviewsDateFrom = document.getElementById("reviews-chat-date-from");
+  const reviewsDateTo = document.getElementById("reviews-chat-date-to");
+  const reviewsClearFilters = document.getElementById("reviews-chat-clear-filters");
+
+  if (!reviewsChatStream || !reviewsForm || !reviewsTextarea) return;
+
+  const state = { pending: false };
+
+  const getFilters = () => {
+    const clinic = reviewsClinicFilter?.value?.trim() || "";
+    const dateFrom = reviewsDateFrom?.value || "";
+    const dateTo = reviewsDateTo?.value || "";
+    return (!clinic && !dateFrom && !dateTo) ? null : { clinic, dateFrom, dateTo };
+  };
+
+  reviewsClearFilters?.addEventListener("click", () => {
+    if (reviewsClinicFilter) reviewsClinicFilter.value = "";
+    if (reviewsDateFrom) reviewsDateFrom.value = "";
+    if (reviewsDateTo) reviewsDateTo.value = "";
   });
-  
-  clearFiltersBtn?.addEventListener("click", () => {
-    if (filterSource) filterSource.value = "";
-    if (filterDateFrom) filterDateFrom.value = "";
-    if (filterDateTo) filterDateTo.value = "";
-    if (filterText) filterText.value = "";
-    articlesState.filters = {
-      source: "",
-      dateFrom: "",
-      dateTo: "",
-      text: "",
-    };
-    articlesState.currentPage = 1;
-    loadArticles();
-  });
-  
-  // Pagination
-  const prevPageBtn = document.getElementById("prev-article-page");
-  const nextPageBtn = document.getElementById("next-article-page");
-  
-  prevPageBtn?.addEventListener("click", () => {
-    if (articlesState.currentPage > 1) {
-      articlesState.currentPage--;
-      loadArticles();
+
+  reviewsForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (state.pending) return;
+    const prompt = reviewsTextarea.value.trim();
+    if (!prompt) { reviewsTextarea.focus(); return; }
+
+    const sources = ["reviews"];
+    const filters = getFilters();
+
+    appendMessageToStream(reviewsChatStream, { role: "user", content: prompt });
+    reviewsTextarea.value = "";
+    const loadingId = appendMessageToStream(reviewsChatStream, { role: "assistant", content: "Thinking…" }, true);
+    state.pending = true;
+
+    try {
+      const headers = { "Content-Type": "application/json" };
+      if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
+      const payload = { prompt, sources };
+      if (filters) payload.filters = filters;
+
+      const response = await fetch(functionUrl, { method: "POST", headers, body: JSON.stringify(payload) });
+      if (!response.ok) throw new Error(await response.text());
+      const data = await response.json();
+
+      replaceMessageInStream(reviewsChatStream, loadingId, {
+        role: "assistant",
+        content: data.answer ?? "No answer returned.",
+        prompt, sources, filters: filters || undefined,
+      });
+    } catch (error) {
+      console.error("reviews chat error", error);
+      replaceMessageInStream(reviewsChatStream, loadingId, {
+        role: "assistant",
+        content: "I couldn't reach Nekovibe right now. Please try again.",
+      });
+    } finally {
+      state.pending = false;
+      reviewsTextarea.focus();
     }
   });
-  
-  nextPageBtn?.addEventListener("click", () => {
-    articlesState.currentPage++;
-    loadArticles();
+
+  reviewsTextarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); reviewsForm.requestSubmit(); }
   });
-  
-  // Make loadArticles available globally
-  window.loadArticles = loadArticles;
 }
 
-// Try to initialize immediately, or wait for DOMContentLoaded
-let tabSwitchingSetup = false;
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
-    if (!tabSwitchingSetup) {
-      setupTabSwitching();
-      tabSwitchingSetup = true;
-    }
-    setupReviewsChat();
-    setupArticlesChat();
-    initSupabaseClient();
-    setupReviewsView();
-    setupArticlesView();
-  });
-} else {
-  // DOM already loaded
-  if (!tabSwitchingSetup) {
-    setupTabSwitching();
-    tabSwitchingSetup = true;
-  }
-  setupReviewsChat();
-  setupArticlesChat();
-  // Wait a bit for supabase script to load
-  setTimeout(() => {
-    initSupabaseClient();
-    setupReviewsView();
-    setupArticlesView();
-  }, 100);
-}
-
-// Reviews state
+// ===== Reviews State & Loading =====
 const reviewsState = {
   currentPage: 1,
   pageSize: 50,
-  filters: {
-    clinic: "",
-    rating: "",
-    dateFrom: "",
-    dateTo: "",
-    comment: "",
-  },
+  filters: { source: "", clinic: "", rating: "", dateFrom: "", dateTo: "", comment: "" },
 };
 
-// Load clinics dropdown
 async function loadClinics() {
   if (!supabaseClient) {
     if (!loadClinics._retryTimer) {
-      loadClinics._retryTimer = setTimeout(() => {
-        loadClinics._retryTimer = null;
-        loadClinics();
-      }, 200);
+      loadClinics._retryTimer = setTimeout(() => { loadClinics._retryTimer = null; loadClinics(); }, 200);
     }
     return;
   }
-  
   try {
-    const { data, error } = await supabaseClient
-      .from("google_reviews")
-      .select("clinic_name")
-      .order("clinic_name");
-    
+    const { data, error } = await supabaseClient.from("google_reviews").select("clinic_name").order("clinic_name");
     if (error) throw error;
-    
     const uniqueClinics = [...new Set((data || []).map((r) => r.clinic_name).filter(Boolean))].sort();
-    const clinicSelects = [
+    [
       document.getElementById("filter-clinic"),
       document.getElementById("reviews-chat-clinic-filter"),
-    ];
-    
-    clinicSelects.forEach((clinicSelect) => {
-      if (!clinicSelect) return;
-      // Keep "All Clinics" option, then add unique clinics
-      clinicSelect.innerHTML = '<option value="">All Clinics</option>';
-      uniqueClinics.forEach((clinic) => {
-        const option = document.createElement("option");
-        option.value = clinic;
-        option.textContent = clinic;
-        clinicSelect.appendChild(option);
+    ].forEach((sel) => {
+      if (!sel) return;
+      sel.innerHTML = '<option value="">All Clinics</option>';
+      uniqueClinics.forEach((c) => {
+        const opt = document.createElement("option");
+        opt.value = c; opt.textContent = c;
+        sel.appendChild(opt);
       });
     });
   } catch (error) {
@@ -913,164 +279,158 @@ async function loadClinics() {
   }
 }
 
-// Load reviews with filters
 async function loadReviews() {
-  if (!supabaseClient) {
-    updateReviewsTable([], "Supabase client not initialized. Please check your configuration.");
-    return;
-  }
-  
+  if (!supabaseClient) { updateReviewsTable([], "Supabase client not initialized."); return; }
+
   const tbody = document.getElementById("reviews-tbody");
-  const countSpan = document.getElementById("reviews-count");
-  
-  if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading reviews...</td></tr>';
-  }
-  
+  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="loading-state">Loading reviews...</td></tr>';
+
+  const source = reviewsState.filters.source;
+
   try {
-    let query = supabaseClient
-      .from("google_reviews")
-      .select("published_at, rating, text, clinic_name", { count: "exact" });
-    
-    // Apply filters
-    if (reviewsState.filters.clinic) {
-      query = query.eq("clinic_name", reviewsState.filters.clinic);
+    if (source === "trustpilot") {
+      await loadReviewsFromTable("trustpilot_reviews", "trustpilot");
+    } else if (source === "google") {
+      await loadReviewsFromTable("google_reviews", "google");
+    } else {
+      await loadAllSourceReviews();
     }
-    
-    if (reviewsState.filters.rating) {
-      query = query.eq("rating", parseInt(reviewsState.filters.rating));
-    }
-    
-    if (reviewsState.filters.dateFrom) {
-      query = query.gte("published_at", reviewsState.filters.dateFrom);
-    }
-    
-    if (reviewsState.filters.dateTo) {
-      // Add one day to include the entire end date
-      const endDate = new Date(reviewsState.filters.dateTo);
-      endDate.setDate(endDate.getDate() + 1);
-      query = query.lt("published_at", endDate.toISOString().split("T")[0]);
-    }
-    
-    if (reviewsState.filters.comment) {
-      query = query.ilike("text", `%${reviewsState.filters.comment}%`);
-    }
-    
-    // Order by date (newest first)
-    query = query.order("published_at", { ascending: false });
-    
-    // Pagination
-    const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
-    const to = from + reviewsState.pageSize - 1;
-    query = query.range(from, to);
-    
-    const { data, error, count } = await query;
-    
-    if (error) throw error;
-    
-    // Update count
-    if (countSpan) {
-      const total = count || 0;
-      const start = total > 0 ? from + 1 : 0;
-      const end = Math.min(from + reviewsState.pageSize, total);
-      countSpan.textContent = `Showing ${start}-${end} of ${total} reviews`;
-    }
-    
-    // Update pagination buttons
-    const prevPageBtn = document.getElementById("prev-page");
-    const nextPageBtn = document.getElementById("next-page");
-    
-    if (prevPageBtn) {
-      prevPageBtn.disabled = reviewsState.currentPage === 1;
-    }
-    if (nextPageBtn) {
-      const total = count || 0;
-      const maxPage = Math.ceil(total / reviewsState.pageSize);
-      nextPageBtn.disabled = reviewsState.currentPage >= maxPage;
-    }
-    
-    // Update page info
-    const pageInfo = document.getElementById("page-info");
-    if (pageInfo) {
-      const total = count || 0;
-      const maxPage = Math.ceil(total / reviewsState.pageSize);
-      pageInfo.textContent = `Page ${reviewsState.currentPage} of ${maxPage || 1}`;
-    }
-    
-    updateReviewsTable(data || [], null);
   } catch (error) {
     console.error("Error loading reviews:", error);
-    updateReviewsTable([], `Error loading reviews: ${error.message}`);
+    updateReviewsTable([], `Error: ${error.message}`);
   }
+}
+
+async function loadReviewsFromTable(tableName, sourceLabel) {
+  let query = supabaseClient.from(tableName)
+    .select("published_at, rating, text, clinic_name", { count: "exact" });
+
+  if (reviewsState.filters.clinic) query = query.eq("clinic_name", reviewsState.filters.clinic);
+  if (reviewsState.filters.rating) query = query.eq("rating", parseInt(reviewsState.filters.rating));
+  if (reviewsState.filters.dateFrom) query = query.gte("published_at", reviewsState.filters.dateFrom);
+  if (reviewsState.filters.dateTo) {
+    const end = new Date(reviewsState.filters.dateTo);
+    end.setDate(end.getDate() + 1);
+    query = query.lt("published_at", end.toISOString().split("T")[0]);
+  }
+  if (reviewsState.filters.comment) query = query.ilike("text", `%${reviewsState.filters.comment}%`);
+
+  query = query.order("published_at", { ascending: false });
+  const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
+  query = query.range(from, from + reviewsState.pageSize - 1);
+
+  const { data, error, count } = await query;
+  if (error) throw error;
+
+  updateCountAndPagination(count || 0, from);
+  updateReviewsTable((data || []).map(r => ({ ...r, source: sourceLabel })), null);
+}
+
+async function loadAllSourceReviews() {
+  const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
+
+  const buildQuery = (tableName) => {
+    let q = supabaseClient.from(tableName)
+      .select("published_at, rating, text, clinic_name", { count: "exact" });
+    if (reviewsState.filters.clinic) q = q.eq("clinic_name", reviewsState.filters.clinic);
+    if (reviewsState.filters.rating) q = q.eq("rating", parseInt(reviewsState.filters.rating));
+    if (reviewsState.filters.dateFrom) q = q.gte("published_at", reviewsState.filters.dateFrom);
+    if (reviewsState.filters.dateTo) {
+      const end = new Date(reviewsState.filters.dateTo);
+      end.setDate(end.getDate() + 1);
+      q = q.lt("published_at", end.toISOString().split("T")[0]);
+    }
+    if (reviewsState.filters.comment) q = q.ilike("text", `%${reviewsState.filters.comment}%`);
+    return q.order("published_at", { ascending: false }).range(0, reviewsState.pageSize - 1);
+  };
+
+  const [gRes, tRes] = await Promise.allSettled([
+    buildQuery("google_reviews"),
+    buildQuery("trustpilot_reviews"),
+  ]);
+
+  const googleReviews = gRes.status === "fulfilled" ? (gRes.value.data || []).map(r => ({ ...r, source: "google" })) : [];
+  const tpReviews = tRes.status === "fulfilled" ? (tRes.value.data || []).map(r => ({ ...r, source: "trustpilot" })) : [];
+  const gCount = gRes.status === "fulfilled" ? (gRes.value.count || 0) : 0;
+  const tCount = tRes.status === "fulfilled" ? (tRes.value.count || 0) : 0;
+
+  const merged = [...googleReviews, ...tpReviews]
+    .sort((a, b) => new Date(b.published_at) - new Date(a.published_at))
+    .slice(0, reviewsState.pageSize);
+
+  updateCountAndPagination(gCount + tCount, from);
+  updateReviewsTable(merged, null);
+}
+
+function updateCountAndPagination(total, from) {
+  const countSpan = document.getElementById("reviews-count");
+  const prevBtn = document.getElementById("prev-page");
+  const nextBtn = document.getElementById("next-page");
+  const pageInfo = document.getElementById("page-info");
+  const maxPage = Math.ceil(total / reviewsState.pageSize);
+
+  if (countSpan) {
+    const start = total > 0 ? from + 1 : 0;
+    const end = Math.min(from + reviewsState.pageSize, total);
+    countSpan.textContent = `Showing ${start}–${end} of ${total} reviews`;
+  }
+  if (prevBtn) prevBtn.disabled = reviewsState.currentPage === 1;
+  if (nextBtn) nextBtn.disabled = reviewsState.currentPage >= maxPage;
+  if (pageInfo) pageInfo.textContent = `Page ${reviewsState.currentPage} of ${maxPage || 1}`;
 }
 
 function updateReviewsTable(reviews, errorMessage) {
   const tbody = document.getElementById("reviews-tbody");
   if (!tbody) return;
-  
+
   if (errorMessage) {
-    tbody.innerHTML = `<tr><td colspan="4" class="error-state">${errorMessage}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" class="error-state">${errorMessage}</td></tr>`;
     return;
   }
-  
   if (reviews.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No reviews found matching your filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No reviews found matching your filters.</td></tr>';
     return;
   }
-  
-  tbody.innerHTML = reviews
-    .map((review, index) => {
-      const date = review.published_at
-        ? new Date(review.published_at).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "numeric",
-          })
-        : "N/A";
-      const rating = review.rating ? "★".repeat(review.rating) : "N/A";
-      const clinic = review.clinic_name || "Unknown";
-      const comment = review.text || "";
-      const commentId = `comment-${index}`;
-      const maxLength = 200;
-      const isTruncated = comment.length > maxLength;
-      const truncatedComment = isTruncated ? comment.substring(0, maxLength) + "..." : comment;
-      
-      return `
-        <tr>
-          <td class="review-date">${date}</td>
-          <td class="review-rating">${rating}</td>
-          <td class="review-clinic">${escapeHtml(clinic)}</td>
-          <td class="review-comment">
-            <span class="comment-text" id="${commentId}-text">${escapeHtml(truncatedComment)}</span>
-            ${isTruncated ? `<span class="comment-full" id="${commentId}-full" style="display: none;">${escapeHtml(comment)}</span><button class="comment-toggle" data-comment-id="${commentId}" onclick="toggleComment('${commentId}')">Show more</button>` : ""}
-          </td>
-        </tr>
-      `;
-    })
-    .join("");
+
+  tbody.innerHTML = reviews.map((review, index) => {
+    const date = review.published_at
+      ? new Date(review.published_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+      : "N/A";
+    const rating = review.rating ? "★".repeat(review.rating) : "N/A";
+    const clinic = review.clinic_name || "Unknown";
+    const comment = review.text || "";
+    const commentId = `comment-${index}`;
+    const maxLength = 200;
+    const isTruncated = comment.length > maxLength;
+    const truncated = isTruncated ? comment.substring(0, maxLength) + "..." : comment;
+    const sourceBadge = review.source === "trustpilot"
+      ? '<span class="source-badge source-trustpilot">Trustpilot</span>'
+      : '<span class="source-badge source-google">Google</span>';
+
+    return `
+      <tr>
+        <td class="review-date">${date}</td>
+        <td class="review-source">${sourceBadge}</td>
+        <td class="review-rating">${rating}</td>
+        <td class="review-clinic">${escapeHtml(clinic)}</td>
+        <td class="review-comment">
+          <span class="comment-text" id="${commentId}-text">${escapeHtml(truncated)}</span>
+          ${isTruncated ? `<span class="comment-full" id="${commentId}-full" style="display:none">${escapeHtml(comment)}</span><button class="comment-toggle" data-comment-id="${commentId}" onclick="toggleComment('${commentId}')">Show more</button>` : ""}
+        </td>
+      </tr>`;
+  }).join("");
 }
 
 function toggleComment(commentId) {
   const textSpan = document.getElementById(`${commentId}-text`);
   const fullSpan = document.getElementById(`${commentId}-full`);
   const button = document.querySelector(`[data-comment-id="${commentId}"]`);
-  
   if (!textSpan || !fullSpan || !button) return;
-  
   const isExpanded = fullSpan.style.display !== "none";
-  
-  if (isExpanded) {
-    textSpan.style.display = "inline";
-    fullSpan.style.display = "none";
-    button.textContent = "Show more";
-  } else {
-    textSpan.style.display = "none";
-    fullSpan.style.display = "inline";
-    button.textContent = "Show less";
-  }
+  textSpan.style.display = isExpanded ? "inline" : "none";
+  fullSpan.style.display = isExpanded ? "none" : "inline";
+  button.textContent = isExpanded ? "Show more" : "Show less";
 }
-
-// Make toggleComment available globally
 window.toggleComment = toggleComment;
 
 function escapeHtml(text) {
@@ -1079,19 +439,18 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Setup reviews view functionality
+// ===== Reviews View Setup =====
 function setupReviewsView() {
-  // Filter controls
+  const filterSource = document.getElementById("filter-source");
   const filterClinic = document.getElementById("filter-clinic");
   const filterRating = document.getElementById("filter-rating");
   const filterDateFrom = document.getElementById("filter-date-from");
   const filterDateTo = document.getElementById("filter-date-to");
   const filterComment = document.getElementById("filter-comment");
-  const applyFiltersBtn = document.getElementById("apply-filters");
-  const clearFiltersBtn = document.getElementById("clear-filters");
-  
-  applyFiltersBtn?.addEventListener("click", () => {
+
+  document.getElementById("apply-filters")?.addEventListener("click", () => {
     reviewsState.filters = {
+      source: filterSource?.value || "",
       clinic: filterClinic?.value || "",
       rating: filterRating?.value || "",
       dateFrom: filterDateFrom?.value || "",
@@ -1101,69 +460,73 @@ function setupReviewsView() {
     reviewsState.currentPage = 1;
     loadReviews();
   });
-  
-  clearFiltersBtn?.addEventListener("click", () => {
+
+  document.getElementById("clear-filters")?.addEventListener("click", () => {
+    if (filterSource) filterSource.value = "";
     if (filterClinic) filterClinic.value = "";
     if (filterRating) filterRating.value = "";
     if (filterDateFrom) filterDateFrom.value = "";
     if (filterDateTo) filterDateTo.value = "";
     if (filterComment) filterComment.value = "";
-    reviewsState.filters = {
-      clinic: "",
-      rating: "",
-      dateFrom: "",
-      dateTo: "",
-      comment: "",
-    };
+    reviewsState.filters = { source: "", clinic: "", rating: "", dateFrom: "", dateTo: "", comment: "" };
     reviewsState.currentPage = 1;
     loadReviews();
   });
-  
-  // Pagination
-  const prevPageBtn = document.getElementById("prev-page");
-  const nextPageBtn = document.getElementById("next-page");
-  
-  prevPageBtn?.addEventListener("click", () => {
-    if (reviewsState.currentPage > 1) {
-      reviewsState.currentPage--;
-      loadReviews();
-    }
+
+  document.getElementById("prev-page")?.addEventListener("click", () => {
+    if (reviewsState.currentPage > 1) { reviewsState.currentPage--; loadReviews(); }
   });
-  
-  nextPageBtn?.addEventListener("click", () => {
-    reviewsState.currentPage++;
-    loadReviews();
+  document.getElementById("next-page")?.addEventListener("click", () => {
+    reviewsState.currentPage++; loadReviews();
   });
-  
-  // Make loadClinics and loadReviews available globally for tab switching
+
   window.loadClinics = loadClinics;
   window.loadReviews = loadReviews;
-  
-  // Setup ratings graph
+
   setupRatingsGraph();
 }
 
-// Ratings graph state
+// ===== Ratings Graph =====
 let ratingsChart = null;
+let graphPeriod = "weekly";
 
-// Load all reviews for graph (no pagination)
+function getWeekStartDate(dateStr) {
+  const d = new Date(dateStr);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
+  const monday = new Date(d);
+  monday.setDate(diff);
+  return monday.toISOString().split("T")[0];
+}
+
+function getMonthKey(dateStr) {
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function getPeriodKey(dateStr, period) {
+  return period === "monthly" ? getMonthKey(dateStr) : getWeekStartDate(dateStr);
+}
+
+function formatPeriodLabel(key, period) {
+  if (period === "monthly") {
+    const [year, month] = key.split("-");
+    return new Date(parseInt(year), parseInt(month) - 1, 1)
+      .toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  }
+  return new Date(key + "T12:00:00")
+    .toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
 async function loadReviewsForGraph(clinicFilter = "") {
   if (!supabaseClient) return [];
-  
   try {
-    let query = supabaseClient
-      .from("google_reviews")
+    let query = supabaseClient.from("google_reviews")
       .select("published_at, rating, clinic_name")
       .order("published_at", { ascending: true });
-    
-    if (clinicFilter) {
-      query = query.eq("clinic_name", clinicFilter);
-    }
-    
+    if (clinicFilter) query = query.eq("clinic_name", clinicFilter);
     const { data, error } = await query;
-    
     if (error) throw error;
-    
     return data || [];
   } catch (error) {
     console.error("Error loading reviews for graph:", error);
@@ -1171,146 +534,119 @@ async function loadReviewsForGraph(clinicFilter = "") {
   }
 }
 
-// Setup and update ratings graph
-async function setupRatingsGraph() {
-  const canvas = document.getElementById("ratings-chart");
-  const clinicFilter = document.getElementById("graph-clinic-filter");
-  
-  if (!canvas) return;
-  
-  // Load clinics for filter
-  if (clinicFilter) {
-    const clinics = await loadClinicsForFilter();
-    clinicFilter.innerHTML = '<option value="">All Clinics</option>' + 
-      clinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-    
-    clinicFilter.addEventListener("change", async () => {
-      await updateRatingsGraph(clinicFilter.value);
-    });
-  }
-  
-  // Initial graph load
-  await updateRatingsGraph("");
-}
-
 async function loadClinicsForFilter() {
   if (!supabaseClient) return [];
-  
   try {
-    const { data, error } = await supabaseClient
-      .from("google_reviews")
-      .select("clinic_name")
-      .order("clinic_name");
-    
+    const { data, error } = await supabaseClient.from("google_reviews").select("clinic_name").order("clinic_name");
     if (error) throw error;
-    
-    // Get unique clinic names
-    const uniqueClinics = [...new Set((data || []).map(r => r.clinic_name).filter(Boolean))];
-    return uniqueClinics;
+    return [...new Set((data || []).map((r) => r.clinic_name).filter(Boolean))];
   } catch (error) {
-    console.error("Error loading clinics:", error);
     return [];
   }
 }
 
+async function setupRatingsGraph() {
+  const canvas = document.getElementById("ratings-chart");
+  const clinicFilter = document.getElementById("graph-clinic-filter");
+  const weeklyBtn = document.getElementById("graph-period-weekly");
+  const monthlyBtn = document.getElementById("graph-period-monthly");
+  if (!canvas) return;
+
+  if (clinicFilter) {
+    const clinics = await loadClinicsForFilter();
+    clinicFilter.innerHTML = '<option value="">All Clinics</option>' +
+      clinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    clinicFilter.addEventListener("change", () => updateRatingsGraph(clinicFilter.value));
+  }
+
+  weeklyBtn?.addEventListener("click", () => {
+    graphPeriod = "weekly";
+    weeklyBtn.classList.add("active");
+    monthlyBtn?.classList.remove("active");
+    updateRatingsGraph(clinicFilter?.value || "");
+  });
+
+  monthlyBtn?.addEventListener("click", () => {
+    graphPeriod = "monthly";
+    monthlyBtn.classList.add("active");
+    weeklyBtn?.classList.remove("active");
+    updateRatingsGraph(clinicFilter?.value || "");
+  });
+
+  await updateRatingsGraph("");
+}
+
 async function updateRatingsGraph(clinicFilter = "") {
   const reviews = await loadReviewsForGraph(clinicFilter);
-  
+
   if (!reviews || reviews.length === 0) {
-    if (ratingsChart) {
-      ratingsChart.destroy();
-      ratingsChart = null;
-    }
+    if (ratingsChart) { ratingsChart.destroy(); ratingsChart = null; }
     return;
   }
-  
-  // Group reviews by date and calculate average rating per day
-  const dateMap = new Map();
-  
-  reviews.forEach(review => {
+
+  const periodMap = new Map();
+  reviews.forEach((review) => {
     if (!review.published_at || !review.rating) return;
-    
-    const date = new Date(review.published_at).toISOString().split('T')[0]; // YYYY-MM-DD
-    if (!dateMap.has(date)) {
-      dateMap.set(date, { total: 0, count: 0 });
-    }
-    const dayData = dateMap.get(date);
-    dayData.total += review.rating;
-    dayData.count += 1;
+    const key = getPeriodKey(review.published_at, graphPeriod);
+    if (!periodMap.has(key)) periodMap.set(key, { total: 0, count: 0 });
+    const d = periodMap.get(key);
+    d.total += review.rating;
+    d.count += 1;
   });
-  
-  // Convert to arrays for chart
-  const dates = Array.from(dateMap.keys()).sort();
-  const avgRatings = dates.map(date => {
-    const dayData = dateMap.get(date);
-    return (dayData.total / dayData.count).toFixed(2);
-  });
-  
-  // Create or update chart
+
+  const periods = Array.from(periodMap.keys()).sort();
+  const avgRatings = periods.map(k => (periodMap.get(k).total / periodMap.get(k).count).toFixed(2));
+  const labels = periods.map(k => formatPeriodLabel(k, graphPeriod));
+
   const ctx = document.getElementById("ratings-chart").getContext("2d");
-  
-  if (ratingsChart) {
-    ratingsChart.destroy();
-  }
-  
+  if (ratingsChart) { ratingsChart.destroy(); }
+
   ratingsChart = new Chart(ctx, {
-    type: 'line',
+    type: "line",
     data: {
-      labels: dates.map(date => {
-        const d = new Date(date);
-        return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-      }),
+      labels,
       datasets: [{
-        label: 'Average Rating',
+        label: "Average Rating",
         data: avgRatings,
-        borderColor: 'rgb(111, 143, 195)',
-        backgroundColor: 'rgba(111, 143, 195, 0.1)',
+        borderColor: "rgb(111, 143, 195)",
+        backgroundColor: "rgba(111, 143, 195, 0.1)",
         tension: 0.4,
         pointRadius: 3,
         pointHoverRadius: 5,
         fill: true,
-      }]
+      }],
     },
     options: {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: {
-          display: true,
-          position: 'top',
-        },
-        tooltip: {
-          callbacks: {
-            label: function(context) {
-              return `Rating: ${context.parsed.y} / 5.0`;
-            }
-          }
-        }
+        legend: { display: true, position: "top" },
+        tooltip: { callbacks: { label: (ctx) => `Rating: ${ctx.parsed.y} / 5.0` } },
       },
       scales: {
         y: {
-          beginAtZero: false,
-          min: 0,
-          max: 5,
-          ticks: {
-            stepSize: 0.5,
-            callback: function(value) {
-              return value + '★';
-            }
-          },
-          title: {
-            display: true,
-            text: 'Rating (out of 5)'
-          }
+          beginAtZero: false, min: 0, max: 5,
+          ticks: { stepSize: 0.5, callback: (v) => v + "★" },
+          title: { display: true, text: "Rating (out of 5)" },
         },
-        x: {
-          title: {
-            display: true,
-            text: 'Date'
-          }
-        }
-      }
-    }
+        x: { title: { display: true, text: graphPeriod === "weekly" ? "Week" : "Month" } },
+      },
+    },
   });
 }
+window.updateRatingsGraph = updateRatingsGraph;
 
+// ===== Init =====
+let tabSwitchingSetup = false;
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", () => {
+    if (!tabSwitchingSetup) { setupTabSwitching(); tabSwitchingSetup = true; }
+    setupReviewsChat();
+    initSupabaseClient();
+    setupReviewsView();
+  });
+} else {
+  if (!tabSwitchingSetup) { setupTabSwitching(); tabSwitchingSetup = true; }
+  setupReviewsChat();
+  setTimeout(() => { initSupabaseClient(); setupReviewsView(); }, 100);
+}

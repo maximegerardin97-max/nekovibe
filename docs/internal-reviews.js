@@ -125,25 +125,17 @@ function setupInternalPasswordProtection() {
       // Ensure internal tab stays active - do this synchronously
       const tabInternal = document.getElementById("tab-internal");
       const internalView = document.getElementById("internal-view");
-      const tabChat = document.getElementById("tab-chat");
       const tabReviews = document.getElementById("tab-reviews");
-      const tabArticles = document.getElementById("tab-articles");
-      const chatView = document.getElementById("chat-view");
       const reviewsView = document.getElementById("reviews-view");
-      const articlesView = document.getElementById("articles-view");
-      
+
       // Force tab states - keep internal tab active
-      if (tabChat) tabChat.classList.remove("active");
       if (tabReviews) tabReviews.classList.remove("active");
-      if (tabArticles) tabArticles.classList.remove("active");
       if (tabInternal) {
         tabInternal.classList.add("active");
       }
-      
+
       // Force view states - keep internal view active
-      if (chatView) chatView.classList.remove("active");
       if (reviewsView) reviewsView.classList.remove("active");
-      if (articlesView) articlesView.classList.remove("active");
       if (internalView) {
         internalView.classList.add("active");
       }
