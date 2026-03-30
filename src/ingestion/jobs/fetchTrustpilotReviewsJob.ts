@@ -29,9 +29,13 @@ interface NextData {
   props: {
     pageProps: {
       reviews: TrustpilotReview[];
-      pagination: {
-        currentPage: number;
-        totalPages: number;
+      filters: {
+        pagination: {
+          currentPage: number;
+          perPage: number;
+          totalCount: number;
+          totalPages: number;
+        };
       };
     };
   };
@@ -116,11 +120,13 @@ export class FetchTrustpilotReviewsJob implements IngestionJob {
     }
 
     const pageProps = nextData?.props?.pageProps;
-    if (!pageProps?.reviews || !pageProps?.pagination) {
+    const pagination = pageProps?.filters?.pagination;
+    if (!pageProps?.reviews || !pagination) {
       throw new Error(`Unexpected __NEXT_DATA__ shape on page ${page} — missing reviews or pagination`);
     }
 
-    return pageProps;
+    // Normalise to the shape our caller expects
+    return { ...pageProps, pagination };
   }
 
   private async processReviews(reviews: TrustpilotReview[], result: IngestionResult) {
