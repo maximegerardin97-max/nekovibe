@@ -27,43 +27,13 @@
             🔒 Internal Reviews
           </button>
           <button id="tab-reviews" class="source-pill-button tab-button" type="button">
-            Neko Google Reviews
-          </button>
-          <button id="tab-articles" class="source-pill-button tab-button" type="button">
-            Articles / Press / LinkedIn
-          </button>
-          <button id="tab-chat" class="source-pill-button tab-button" type="button">
-            Neko chat
+            Public Reviews
           </button>
         </div>
       </header>
 
       <main>
-        <!-- Neko Chat View (General) -->
-        <div id="chat-view" class="tab-content">
-          <section id="chat-stream" aria-live="polite">
-            <div class="empty-state">
-              <p>Ask anything about Neko Health</p>
-            </div>
-          </section>
-
-          <form id="ask-form">
-            <div class="input-wrapper">
-              <textarea
-                name="prompt"
-                id="prompt"
-                rows="3"
-                placeholder="Ask anything about Neko Health…"
-                autocomplete="off"
-              ></textarea>
-              <button type="submit" aria-label="Send">
-                <span>Send</span>
-              </button>
-            </div>
-          </form>
-        </div>
-
-        <!-- Neko Reviews View (Combined Reviews + Chat) -->
+        <!-- Public Reviews View (Google + Trustpilot) -->
         <div id="reviews-view" class="tab-content">
           <div class="reviews-combined-layout">
             <!-- Top: Chat -->
@@ -74,27 +44,27 @@
                 </div>
               </section>
 
-          <div class="chat-filters">
-            <div class="filter-group">
-              <label for="reviews-chat-clinic-filter">Clinic</label>
-              <select id="reviews-chat-clinic-filter">
-                <option value="">All Clinics</option>
-              </select>
-            </div>
-            <div class="filter-group">
-              <label for="reviews-chat-date-from">Date From</label>
-              <input type="date" id="reviews-chat-date-from" />
-            </div>
-            <div class="filter-group">
-              <label for="reviews-chat-date-to">Date To</label>
-              <input type="date" id="reviews-chat-date-to" />
-            </div>
-            <div class="filter-actions">
-              <button type="button" id="reviews-chat-clear-filters" class="filter-btn filter-btn-secondary">
-                Clear Filters
-              </button>
-            </div>
-          </div>
+              <div class="chat-filters">
+                <div class="filter-group">
+                  <label for="reviews-chat-clinic-filter">Clinic</label>
+                  <select id="reviews-chat-clinic-filter">
+                    <option value="">All Clinics</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="reviews-chat-date-from">Date From</label>
+                  <input type="date" id="reviews-chat-date-from" />
+                </div>
+                <div class="filter-group">
+                  <label for="reviews-chat-date-to">Date To</label>
+                  <input type="date" id="reviews-chat-date-to" />
+                </div>
+                <div class="filter-actions">
+                  <button type="button" id="reviews-chat-clear-filters" class="filter-btn filter-btn-secondary">
+                    Clear Filters
+                  </button>
+                </div>
+              </div>
 
               <form id="reviews-ask-form">
                 <div class="input-wrapper">
@@ -116,11 +86,17 @@
             <div class="ratings-graph-container">
               <div class="graph-header">
                 <h3>Ratings Over Time</h3>
-                <div class="graph-filter">
-                  <label for="graph-clinic-filter">Clinic:</label>
-                  <select id="graph-clinic-filter">
-                    <option value="">All Clinics</option>
-                  </select>
+                <div class="graph-controls">
+                  <div class="graph-period-toggle">
+                    <button id="graph-period-weekly" class="toggle-btn active" type="button">Weekly</button>
+                    <button id="graph-period-monthly" class="toggle-btn" type="button">Monthly</button>
+                  </div>
+                  <div class="graph-filter">
+                    <label for="graph-clinic-filter">Clinic:</label>
+                    <select id="graph-clinic-filter">
+                      <option value="">All Clinics</option>
+                    </select>
+                  </div>
                 </div>
               </div>
               <canvas id="ratings-chart"></canvas>
@@ -128,8 +104,15 @@
 
             <!-- Bottom: Reviews Table with Filters -->
             <div class="reviews-container">
-              <!-- Filters -->
               <div class="reviews-filters">
+                <div class="filter-group">
+                  <label for="filter-source">Source</label>
+                  <select id="filter-source">
+                    <option value="">All Sources</option>
+                    <option value="google">Google Reviews</option>
+                    <option value="trustpilot">Trustpilot</option>
+                  </select>
+                </div>
                 <div class="filter-group">
                   <label for="filter-clinic">Clinic</label>
                   <select id="filter-clinic">
@@ -165,17 +148,16 @@
                 </div>
               </div>
 
-              <!-- Results Info -->
               <div class="reviews-info">
                 <span id="reviews-count">Loading reviews...</span>
               </div>
 
-              <!-- Reviews Table -->
               <div class="reviews-table-container">
                 <table class="reviews-table">
                   <thead>
                     <tr>
                       <th>Date</th>
+                      <th>Source</th>
                       <th>Rating</th>
                       <th>Clinic</th>
                       <th>Comment</th>
@@ -183,111 +165,16 @@
                   </thead>
                   <tbody id="reviews-tbody">
                     <tr>
-                      <td colspan="4" class="loading-state">Loading reviews...</td>
+                      <td colspan="5" class="loading-state">Loading reviews...</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
-              <!-- Pagination -->
               <div class="reviews-pagination">
                 <button id="prev-page" class="pagination-btn" disabled>Previous</button>
                 <span id="page-info">Page 1</span>
                 <button id="next-page" class="pagination-btn">Next</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Articles / Press / LinkedIn View (Combined Articles + Chat) -->
-        <div id="articles-view" class="tab-content">
-          <div class="reviews-combined-layout">
-            <!-- Top: Chat -->
-            <div class="reviews-chat-section">
-              <section id="articles-chat-stream" aria-live="polite">
-                <div class="empty-state">
-                  <p>What do you want to know about articles, press, and LinkedIn?</p>
-                </div>
-              </section>
-
-              <form id="articles-ask-form">
-                <div class="input-wrapper">
-                  <textarea
-                    name="articles-prompt"
-                    id="articles-prompt"
-                    rows="3"
-                    placeholder="Ask anything about articles and press…"
-                    autocomplete="off"
-                  ></textarea>
-                  <button type="submit" aria-label="Send">
-                    <span>Send</span>
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <!-- Bottom: Articles Table with Filters -->
-            <div class="reviews-container">
-              <!-- Filters -->
-              <div class="reviews-filters">
-                <div class="filter-group">
-                  <label for="filter-article-source">Source</label>
-                  <select id="filter-article-source">
-                    <option value="">All Sources</option>
-                    <option value="blog">Blog</option>
-                    <option value="press">Press</option>
-                    <option value="article">Article</option>
-                    <option value="linkedin">LinkedIn</option>
-                  </select>
-                </div>
-                <div class="filter-group">
-                  <label for="filter-article-date-from">Date From</label>
-                  <input type="date" id="filter-article-date-from" />
-                </div>
-                <div class="filter-group">
-                  <label for="filter-article-date-to">Date To</label>
-                  <input type="date" id="filter-article-date-to" />
-                </div>
-                <div class="filter-group filter-group-wide">
-                  <label for="filter-article-text">Search Title/Content</label>
-                  <input type="text" id="filter-article-text" placeholder="Search in title or content..." />
-                </div>
-                <div class="filter-actions">
-                  <button id="apply-article-filters" class="filter-btn">Apply Filters</button>
-                  <button id="clear-article-filters" class="filter-btn filter-btn-secondary">Clear</button>
-                </div>
-              </div>
-
-              <!-- Results Info -->
-              <div class="reviews-info">
-                <span id="articles-count">Loading articles...</span>
-              </div>
-
-              <!-- Articles Table -->
-              <div class="reviews-table-container">
-                <table class="reviews-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Source</th>
-                      <th>Title</th>
-                      <th>Author</th>
-                      <th>Summary</th>
-                    </tr>
-                  </thead>
-                  <tbody id="articles-tbody">
-                    <tr>
-                      <td colspan="4" class="loading-state">Loading articles...</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              <!-- Pagination -->
-              <div class="reviews-pagination">
-                <button id="prev-article-page" class="pagination-btn" disabled>Previous</button>
-                <span id="article-page-info">Page 1</span>
-                <button id="next-article-page" class="pagination-btn">Next</button>
               </div>
             </div>
           </div>
@@ -309,7 +196,6 @@
 
           <div id="internal-content" style="display: none;">
             <div class="reviews-combined-layout">
-              <!-- Top: Chat -->
               <div class="reviews-chat-section">
                 <section id="internal-chat-stream" aria-live="polite">
                   <div class="empty-state">
@@ -360,7 +246,6 @@
                 </form>
               </div>
 
-              <!-- CSV Upload -->
               <div class="csv-upload-container">
                 <h3>Upload Reviews CSV</h3>
                 <form id="csv-upload-form">
@@ -370,7 +255,6 @@
                 <div id="upload-status"></div>
               </div>
 
-              <!-- Ratings Graph -->
               <div class="ratings-graph-container">
                 <div class="graph-header">
                   <h3>Ratings Over Time</h3>
@@ -384,9 +268,7 @@
                 <canvas id="internal-ratings-chart"></canvas>
               </div>
 
-              <!-- Bottom: Reviews Table with Filters -->
               <div class="reviews-container">
-                <!-- Filters -->
                 <div class="reviews-filters">
                   <div class="filter-group">
                     <label for="internal-filter-clinic">Clinic</label>
@@ -423,12 +305,10 @@
                   </div>
                 </div>
 
-                <!-- Results Info -->
                 <div class="reviews-info">
                   <span id="internal-reviews-count">Loading reviews...</span>
                 </div>
 
-                <!-- Reviews Table -->
                 <div class="reviews-table-container">
                   <table class="reviews-table">
                     <thead>
@@ -447,7 +327,6 @@
                   </table>
                 </div>
 
-                <!-- Pagination -->
                 <div class="reviews-pagination">
                   <button id="prev-internal-page" class="pagination-btn" disabled>Previous</button>
                   <span id="internal-page-info">Page 1</span>
@@ -466,4 +345,3 @@
     <script type="module" src="./internal-reviews.js"></script>
   </body>
 </html>
-

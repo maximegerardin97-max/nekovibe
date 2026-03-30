@@ -7,6 +7,7 @@ import * as dotenv from 'dotenv';
 import { IngestionJob, IngestionResult, GoogleReview } from '../../types';
 import { storeGoogleReview } from '../../data/supabase';
 import { parseGoogleReview, RawGoogleReviewData } from '../parsers/reviewParser';
+import { NEKO_CLINICS } from '../../config/clinics';
 
 dotenv.config();
 
@@ -57,18 +58,25 @@ export class FetchGoogleReviewsJob implements IngestionJob {
       errors: [],
     };
 
+    // Combine: env-var entries (existing clinics) + config clinics (Birmingham, Victoria, etc.)
     const placeIds = this.getClinicPlaceIds();
-    if (placeIds.length === 0) {
-      console.warn('No clinic place IDs configured. Set GOOGLE_PLACES_IDS in .env');
+    const configEntries = NEKO_CLINICS.map(c =>
+      c.placeId ? c.placeId : c.googleMapsUrl ? c.googleMapsUrl : `search:${c.searchQuery}`
+    );
+    // Merge, deduplicating exact strings (env-var entries take priority)
+    const allEntries = [...placeIds, ...configEntries.filter(e => !placeIds.includes(e))];
+
+    if (allEntries.length === 0) {
+      console.warn('No clinic place IDs configured. Set GOOGLE_PLACES_IDS in .env or add clinics to src/config/clinics.ts');
       return result;
     }
 
-    console.log(`Starting Google Reviews ingestion for ${placeIds.length} clinic(s)...`);
+    console.log(`Starting Google Reviews ingestion for ${allEntries.length} clinic(s)...`);
 
-    for (const placeIdOrUrl of placeIds) {
+    for (const placeIdOrUrl of allEntries) {
       console.log(`\nFetching reviews for: ${placeIdOrUrl.substring(0, 60)}...`);
       const clinicResult = await this.fetchReviewsForClinic(placeIdOrUrl);
-      
+
       result.added += clinicResult.added;
       result.skipped += clinicResult.skipped;
       result.errors.push(...clinicResult.errors);
@@ -156,6 +164,12 @@ export class FetchGoogleReviewsJob implements IngestionJob {
    * Get the standard Place ID (ChIJ... format) from a URL or existing Place ID
    */
   private async getPlaceInfo(placeIdOrUrl: string): Promise<PlaceInfo | null> {
+    // Text search query (from clinic config)
+    if (placeIdOrUrl.startsWith('search:')) {
+      const query = placeIdOrUrl.slice(7).trim();
+      return await this.findPlaceByTextSearch(query);
+    }
+
     // If it's already a Place ID (starts with ChIJ)
     if (placeIdOrUrl.startsWith('ChIJ')) {
       const clinicName = await this.getPlaceNameById(placeIdOrUrl);
@@ -296,6 +310,30 @@ export class FetchGoogleReviewsJob implements IngestionJob {
       }
       return null;
     } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Find a place using a plain text search query via Google Places Text Search API
+   */
+  private async findPlaceByTextSearch(query: string): Promise<PlaceInfo | null> {
+    try {
+      console.log(`  Text search for: ${query}`);
+      const searchUrl = `${this.apiBaseUrl}/textsearch/json?query=${encodeURIComponent(query)}&key=${this.apiKey}`;
+      const response = await fetch(searchUrl);
+      const data = await response.json();
+
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        return {
+          placeId: data.results[0].place_id,
+          clinicName: data.results[0].name || query,
+        };
+      }
+      console.warn(`  No results found for query: ${query}`);
+      return null;
+    } catch (error) {
+      console.warn(`  Text search error:`, error);
       return null;
     }
   }
