@@ -251,6 +251,17 @@ const reviewsState = {
   filters: { source: "", clinic: "", rating: "", dateFrom: "", dateTo: "", comment: "" },
 };
 
+// Known clinics — ensures they always appear in dropdowns even with 0 reviews
+const KNOWN_CLINICS = [
+  "Neko Health Marylebone",
+  "Neko Health Spitalfields",
+  "Neko Health Covent Garden",
+  "Neko Health Manchester",
+  "Neko Health Birmingham",
+  "Neko Health Victoria",
+  "Neko Health Östermalm",
+];
+
 async function loadClinics() {
   if (!supabaseClient) {
     if (!loadClinics._retryTimer) {
@@ -259,9 +270,15 @@ async function loadClinics() {
     return;
   }
   try {
-    const { data, error } = await supabaseClient.from("google_reviews").select("clinic_name").order("clinic_name");
-    if (error) throw error;
-    const uniqueClinics = [...new Set((data || []).map((r) => r.clinic_name).filter(Boolean))].sort();
+    const [gRes, tRes] = await Promise.allSettled([
+      supabaseClient.from("google_reviews").select("clinic_name"),
+      supabaseClient.from("trustpilot_reviews").select("clinic_name"),
+    ]);
+    const fromDB = [
+      ...(gRes.status === "fulfilled" ? (gRes.value.data || []) : []),
+      ...(tRes.status === "fulfilled" ? (tRes.value.data || []) : []),
+    ].map((r) => r.clinic_name).filter(Boolean);
+    const uniqueClinics = [...new Set([...KNOWN_CLINICS, ...fromDB])].sort();
     [
       document.getElementById("filter-clinic"),
       document.getElementById("reviews-chat-clinic-filter"),
@@ -518,16 +535,32 @@ function formatPeriodLabel(key, period) {
     .toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-async function loadReviewsForGraph(clinicFilter = "") {
+async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "") {
   if (!supabaseClient) return [];
   try {
-    let query = supabaseClient.from("google_reviews")
-      .select("published_at, rating, clinic_name")
-      .order("published_at", { ascending: true });
-    if (clinicFilter) query = query.eq("clinic_name", clinicFilter);
-    const { data, error } = await query;
-    if (error) throw error;
-    return data || [];
+    const buildQ = (table) => {
+      let q = supabaseClient.from(table)
+        .select("published_at, rating, clinic_name")
+        .order("published_at", { ascending: true });
+      if (clinicFilter) q = q.eq("clinic_name", clinicFilter);
+      return q;
+    };
+
+    if (sourceFilter === "google") {
+      const { data, error } = await buildQ("google_reviews");
+      if (error) throw error;
+      return (data || []).map(r => ({ ...r, source: "google" }));
+    }
+    if (sourceFilter === "trustpilot") {
+      const { data, error } = await buildQ("trustpilot_reviews");
+      if (error) throw error;
+      return (data || []).map(r => ({ ...r, source: "trustpilot" }));
+    }
+    // All sources
+    const [gRes, tRes] = await Promise.allSettled([buildQ("google_reviews"), buildQ("trustpilot_reviews")]);
+    const gData = (gRes.status === "fulfilled" ? gRes.value.data || [] : []).map(r => ({ ...r, source: "google" }));
+    const tData = (tRes.status === "fulfilled" ? tRes.value.data || [] : []).map(r => ({ ...r, source: "trustpilot" }));
+    return [...gData, ...tData].sort((a, b) => new Date(a.published_at) - new Date(b.published_at));
   } catch (error) {
     console.error("Error loading reviews for graph:", error);
     return [];
@@ -535,49 +568,72 @@ async function loadReviewsForGraph(clinicFilter = "") {
 }
 
 async function loadClinicsForFilter() {
-  if (!supabaseClient) return [];
+  if (!supabaseClient) return KNOWN_CLINICS;
   try {
-    const { data, error } = await supabaseClient.from("google_reviews").select("clinic_name").order("clinic_name");
-    if (error) throw error;
-    return [...new Set((data || []).map((r) => r.clinic_name).filter(Boolean))];
+    const [gRes, tRes] = await Promise.allSettled([
+      supabaseClient.from("google_reviews").select("clinic_name"),
+      supabaseClient.from("trustpilot_reviews").select("clinic_name"),
+    ]);
+    const fromDB = [
+      ...(gRes.status === "fulfilled" ? (gRes.value.data || []) : []),
+      ...(tRes.status === "fulfilled" ? (tRes.value.data || []) : []),
+    ].map((r) => r.clinic_name).filter(Boolean);
+    return [...new Set([...KNOWN_CLINICS, ...fromDB])].sort();
   } catch (error) {
-    return [];
+    return KNOWN_CLINICS;
   }
 }
+
+let graphSource = "";
 
 async function setupRatingsGraph() {
   const canvas = document.getElementById("ratings-chart");
   const clinicFilter = document.getElementById("graph-clinic-filter");
   const weeklyBtn = document.getElementById("graph-period-weekly");
   const monthlyBtn = document.getElementById("graph-period-monthly");
+  const sourceAllBtn = document.getElementById("graph-source-all");
+  const sourceGoogleBtn = document.getElementById("graph-source-google");
+  const sourceTpBtn = document.getElementById("graph-source-trustpilot");
   if (!canvas) return;
+
+  const refresh = () => updateRatingsGraph(clinicFilter?.value || "", graphSource);
 
   if (clinicFilter) {
     const clinics = await loadClinicsForFilter();
     clinicFilter.innerHTML = '<option value="">All Clinics</option>' +
       clinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
-    clinicFilter.addEventListener("change", () => updateRatingsGraph(clinicFilter.value));
+    clinicFilter.addEventListener("change", refresh);
   }
 
   weeklyBtn?.addEventListener("click", () => {
     graphPeriod = "weekly";
     weeklyBtn.classList.add("active");
     monthlyBtn?.classList.remove("active");
-    updateRatingsGraph(clinicFilter?.value || "");
+    refresh();
   });
 
   monthlyBtn?.addEventListener("click", () => {
     graphPeriod = "monthly";
     monthlyBtn.classList.add("active");
     weeklyBtn?.classList.remove("active");
-    updateRatingsGraph(clinicFilter?.value || "");
+    refresh();
   });
 
-  await updateRatingsGraph("");
+  const setSource = (src, activeBtn) => {
+    graphSource = src;
+    [sourceAllBtn, sourceGoogleBtn, sourceTpBtn].forEach(b => b?.classList.remove("active"));
+    activeBtn?.classList.add("active");
+    refresh();
+  };
+  sourceAllBtn?.addEventListener("click", () => setSource("", sourceAllBtn));
+  sourceGoogleBtn?.addEventListener("click", () => setSource("google", sourceGoogleBtn));
+  sourceTpBtn?.addEventListener("click", () => setSource("trustpilot", sourceTpBtn));
+
+  await updateRatingsGraph("", "");
 }
 
-async function updateRatingsGraph(clinicFilter = "") {
-  const reviews = await loadReviewsForGraph(clinicFilter);
+async function updateRatingsGraph(clinicFilter = "", sourceFilter = "") {
+  const reviews = await loadReviewsForGraph(clinicFilter, sourceFilter);
 
   if (!reviews || reviews.length === 0) {
     if (ratingsChart) { ratingsChart.destroy(); ratingsChart = null; }
