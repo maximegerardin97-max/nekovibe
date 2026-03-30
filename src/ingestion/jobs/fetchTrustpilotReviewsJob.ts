@@ -1,9 +1,9 @@
 /**
  * Trustpilot Reviews Ingestion Job
- * Fetches reviews from Trustpilot Consumer API for Neko Health
+ * Scrapes reviews from https://www.trustpilot.com/review/nekohealth.com
  *
- * Requires TRUSTPILOT_API_KEY env var.
- * Get a free API key at: https://developer.trustpilot.com/
+ * No API key required — Trustpilot uses Next.js SSR so all review data
+ * is embedded in the __NEXT_DATA__ JSON blob in the page HTML.
  */
 
 import * as dotenv from 'dotenv';
@@ -11,41 +11,36 @@ import { IngestionJob, IngestionResult } from '../../types';
 
 dotenv.config();
 
+const BASE_URL = 'https://www.trustpilot.com/review/nekohealth.com';
+const USER_AGENT =
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
+  '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+
 interface TrustpilotReview {
   id: string;
-  stars: number;
+  rating: number;
   title?: string;
-  text: string;
-  createdAt: string;
-  consumer: {
-    displayName: string;
-  };
-  reviewedLocation?: {
-    name: string;
-  };
+  text?: string;
+  dates: { publishedDate: string };
+  consumer: { displayName: string };
 }
 
-interface TrustpilotBusinessUnit {
-  id: string;
-  displayName: string;
-  numberOfReviews: { total: number };
+interface NextData {
+  props: {
+    pageProps: {
+      reviews: TrustpilotReview[];
+      pagination: {
+        currentPage: number;
+        totalPages: number;
+      };
+    };
+  };
 }
 
 export class FetchTrustpilotReviewsJob implements IngestionJob {
   name = 'fetchTrustpilotReviews';
 
-  private readonly apiKey: string;
-  private readonly apiBase = 'https://api.trustpilot.com/v1';
-  private readonly businessDomain = 'nekohealth.com';
   private supabaseClient: any = null;
-
-  constructor() {
-    const apiKey = process.env.TRUSTPILOT_API_KEY;
-    if (!apiKey) {
-      throw new Error('TRUSTPILOT_API_KEY not set in .env file');
-    }
-    this.apiKey = apiKey;
-  }
 
   private async getSupabaseClient() {
     if (this.supabaseClient) return this.supabaseClient;
@@ -63,37 +58,23 @@ export class FetchTrustpilotReviewsJob implements IngestionJob {
     const result: IngestionResult = { added: 0, skipped: 0, errors: [] };
 
     try {
-      const businessUnit = await this.findBusinessUnit();
-      if (!businessUnit) {
-        console.warn(`No Trustpilot business unit found for domain: ${this.businessDomain}`);
-        return result;
-      }
+      // Fetch first page to discover total pages
+      const firstPage = await this.fetchPage(1);
+      const { pagination, reviews: firstReviews } = firstPage;
 
-      console.log(`Found: ${businessUnit.displayName} (${businessUnit.id})`);
-      console.log(`Total reviews: ${businessUnit.numberOfReviews.total}`);
+      console.log(`Trustpilot: ${pagination.totalPages} pages to scrape`);
 
-      let page = 1;
-      const pageSize = 100;
+      await this.processReviews(firstReviews, result);
 
-      while (true) {
-        const reviews = await this.fetchReviewsPage(businessUnit.id, page, pageSize);
-        if (!reviews || reviews.length === 0) break;
-
-        for (const review of reviews) {
-          const status = await this.storeReview(review, businessUnit.displayName);
-          if (status === 'added') result.added++;
-          else if (status === 'skipped') result.skipped++;
-          else result.errors.push({ item: review.id, error: status });
-        }
-
-        console.log(`  Page ${page}: processed ${reviews.length} reviews`);
-        if (reviews.length < pageSize) break;
-        page++;
-        await new Promise(r => setTimeout(r, 300));
+      for (let page = 2; page <= pagination.totalPages; page++) {
+        await new Promise(r => setTimeout(r, 500));
+        const { reviews } = await this.fetchPage(page);
+        await this.processReviews(reviews, result);
+        console.log(`  Page ${page}/${pagination.totalPages}: processed ${reviews.length} reviews`);
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Trustpilot ingestion error:', msg);
+      console.error('Trustpilot scrape error:', msg);
       result.errors.push({ item: 'job', error: msg });
     }
 
@@ -105,40 +86,64 @@ export class FetchTrustpilotReviewsJob implements IngestionJob {
     return result;
   }
 
-  private async findBusinessUnit(): Promise<TrustpilotBusinessUnit | null> {
-    const url = `${this.apiBase}/business-units/find?name=${encodeURIComponent(this.businessDomain)}&apikey=${this.apiKey}`;
-    const response = await fetch(url);
+  private async fetchPage(page: number): Promise<NextData['props']['pageProps']> {
+    const url = `${BASE_URL}?page=${page}&sort=recency`;
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.9',
+      },
+    });
+
     if (!response.ok) {
-      console.warn(`Business unit lookup failed: HTTP ${response.status}`);
-      return null;
+      throw new Error(`HTTP ${response.status} fetching page ${page}`);
     }
-    return response.json() as Promise<TrustpilotBusinessUnit>;
+
+    const html = await response.text();
+
+    // Extract __NEXT_DATA__ JSON from the HTML
+    const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">([^<]+)<\/script>/);
+    if (!match) {
+      throw new Error(`__NEXT_DATA__ not found on page ${page} — Trustpilot may have changed their structure`);
+    }
+
+    let nextData: NextData;
+    try {
+      nextData = JSON.parse(match[1]);
+    } catch {
+      throw new Error(`Failed to parse __NEXT_DATA__ JSON on page ${page}`);
+    }
+
+    const pageProps = nextData?.props?.pageProps;
+    if (!pageProps?.reviews || !pageProps?.pagination) {
+      throw new Error(`Unexpected __NEXT_DATA__ shape on page ${page} — missing reviews or pagination`);
+    }
+
+    return pageProps;
   }
 
-  private async fetchReviewsPage(businessUnitId: string, page: number, pageSize: number): Promise<TrustpilotReview[]> {
-    const url = `${this.apiBase}/business-units/${businessUnitId}/reviews?apikey=${this.apiKey}&page=${page}&perPage=${pageSize}&orderBy=createdat.desc`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      console.warn(`Reviews page ${page} failed: HTTP ${response.status}`);
-      return [];
+  private async processReviews(reviews: TrustpilotReview[], result: IngestionResult) {
+    for (const review of reviews) {
+      const status = await this.storeReview(review);
+      if (status === 'added') result.added++;
+      else if (status === 'skipped') result.skipped++;
+      else result.errors.push({ item: review.id, error: status });
     }
-    const data = await response.json();
-    return data.reviews || [];
   }
 
-  private async storeReview(review: TrustpilotReview, businessName: string): Promise<'added' | 'skipped' | string> {
+  private async storeReview(review: TrustpilotReview): Promise<'added' | 'skipped' | string> {
     try {
       const client = await this.getSupabaseClient();
-      const clinicName = review.reviewedLocation?.name || businessName;
 
       const record = {
         external_id: review.id,
-        clinic_name: clinicName,
-        author_name: review.consumer.displayName,
-        rating: review.stars,
+        clinic_name: 'Neko Health',
+        author_name: review.consumer?.displayName || 'Anonymous',
+        rating: review.rating,
         title: review.title || null,
         text: review.text || review.title || '',
-        published_at: review.createdAt,
+        published_at: review.dates?.publishedDate || null,
         raw_data: review,
         updated_at: new Date().toISOString(),
       };
