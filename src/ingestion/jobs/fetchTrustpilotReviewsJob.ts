@@ -25,17 +25,24 @@ interface TrustpilotReview {
   consumer: { displayName: string };
 }
 
+interface TrustpilotPagination {
+  currentPage: number;
+  perPage: number;
+  totalCount: number;
+  totalPages: number;
+}
+
+interface PageResult {
+  reviews: TrustpilotReview[];
+  pagination: TrustpilotPagination;
+}
+
 interface NextData {
   props: {
     pageProps: {
       reviews: TrustpilotReview[];
       filters: {
-        pagination: {
-          currentPage: number;
-          perPage: number;
-          totalCount: number;
-          totalPages: number;
-        };
+        pagination: TrustpilotPagination;
       };
     };
   };
@@ -90,7 +97,7 @@ export class FetchTrustpilotReviewsJob implements IngestionJob {
     return result;
   }
 
-  private async fetchPage(page: number): Promise<NextData['props']['pageProps']> {
+  private async fetchPage(page: number): Promise<PageResult> {
     const url = `${BASE_URL}?page=${page}&sort=recency`;
     const response = await fetch(url, {
       headers: {
@@ -125,8 +132,7 @@ export class FetchTrustpilotReviewsJob implements IngestionJob {
       throw new Error(`Unexpected __NEXT_DATA__ shape on page ${page} — missing reviews or pagination`);
     }
 
-    // Normalise to the shape our caller expects
-    return { ...pageProps, pagination };
+    return { reviews: pageProps.reviews, pagination };
   }
 
   private async processReviews(reviews: TrustpilotReview[], result: IngestionResult) {
