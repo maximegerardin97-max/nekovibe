@@ -1101,3 +1101,120 @@ button[type="submit"]:hover {
   margin-bottom: 16px;
 }
 
+/* ===== Topic Chips ===== */
+.topic-chips-section {
+  padding: 12px 20px 4px;
+}
+
+.topic-chips-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.topic-chips-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+}
+
+.topic-clear-btn {
+  font-size: 0.75rem;
+  color: #6b7280;
+  background: none;
+  border: 1px solid #d1d5db;
+  border-radius: 20px;
+  padding: 2px 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s;
+}
+
+.topic-clear-btn:hover {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.topic-chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 8px;
+}
+
+.topic-chips-loading,
+.topic-chips-empty {
+  font-size: 0.8rem;
+  color: #9ca3af;
+  font-style: italic;
+}
+
+.topic-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid transparent;
+  transition: all 0.15s ease;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.topic-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+}
+
+.topic-chip.sentiment-positive {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+.topic-chip.sentiment-positive:hover,
+.topic-chip.sentiment-positive.active {
+  background: #d1fae5;
+  border-color: #34d399;
+}
+
+.topic-chip.sentiment-negative {
+  background: #fef2f2;
+  color: #7f1d1d;
+  border-color: #fecaca;
+}
+.topic-chip.sentiment-negative:hover,
+.topic-chip.sentiment-negative.active {
+  background: #fee2e2;
+  border-color: #f87171;
+}
+
+.topic-chip.sentiment-mixed {
+  background: #fffbeb;
+  color: #78350f;
+  border-color: #fde68a;
+}
+.topic-chip.sentiment-mixed:hover,
+.topic-chip.sentiment-mixed.active {
+  background: #fef3c7;
+  border-color: #fbbf24;
+}
+
+.topic-chip.active {
+  box-shadow: 0 0 0 2px currentColor;
+  font-weight: 600;
+}
+
+.topic-count {
+  font-size: 0.7rem;
+  opacity: 0.65;
+  font-weight: 400;
+}
+

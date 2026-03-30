@@ -41,6 +41,7 @@ function setupTabSwitching() {
       tabReviews.classList.add("active");
       reviewsView.classList.add("active");
       if (typeof loadClinics === "function") loadClinics();
+      if (typeof loadTopics === "function") loadTopics();
       if (typeof loadReviews === "function") loadReviews();
       if (typeof updateRatingsGraph === "function") {
         const graphFilter = document.getElementById("graph-clinic-filter");
@@ -217,6 +218,7 @@ function setupReviewsChat() {
       if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
       const payload = { prompt, sources };
       if (filters) payload.filters = filters;
+      if (reviewsState.activeTopicSlug) payload.topicSlug = reviewsState.activeTopicSlug;
 
       const response = await fetch(functionUrl, { method: "POST", headers, body: JSON.stringify(payload) });
       if (!response.ok) throw new Error(await response.text());
@@ -249,6 +251,8 @@ const reviewsState = {
   currentPage: 1,
   pageSize: 50,
   filters: { source: "", clinic: "", rating: "", dateFrom: "", dateTo: "", comment: "" },
+  activeTopicSlug: null,
+  activeTopicKeywords: [],
 };
 
 // Known clinics — ensures they always appear in dropdowns even with 0 reviews
@@ -296,6 +300,78 @@ async function loadClinics() {
   }
 }
 
+// ===== Topic Chips =====
+
+async function loadTopics() {
+  if (!supabaseClient) return;
+  try {
+    const { data, error } = await supabaseClient
+      .from("review_topics")
+      .select("name, slug, sentiment, review_count, keywords")
+      .order("review_count", { ascending: false })
+      .limit(20);
+    if (error || !data || data.length === 0) {
+      const container = document.getElementById("topic-chips");
+      if (container) container.innerHTML = '<span class="topic-chips-empty">No topics yet — run generate-topics to populate.</span>';
+      return;
+    }
+    renderTopicChips(data);
+  } catch (e) {
+    console.error("Error loading topics:", e);
+  }
+}
+
+function renderTopicChips(topics) {
+  const container = document.getElementById("topic-chips");
+  const clearBtn = document.getElementById("clear-topic-filter");
+  if (!container) return;
+
+  container.innerHTML = topics
+    .map(
+      (t) =>
+        `<button class="topic-chip sentiment-${escapeHtml(t.sentiment)}" data-slug="${escapeHtml(t.slug)}" data-keywords="${escapeHtml((t.keywords || []).join(","))}" type="button">
+          ${escapeHtml(t.name)}<span class="topic-count">${t.review_count || ""}</span>
+        </button>`,
+    )
+    .join("");
+
+  container.querySelectorAll(".topic-chip").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const slug = btn.dataset.slug;
+      const keywords = (btn.dataset.keywords || "").split(",").filter(Boolean);
+
+      if (reviewsState.activeTopicSlug === slug) {
+        // Deactivate
+        reviewsState.activeTopicSlug = null;
+        reviewsState.activeTopicKeywords = [];
+        btn.classList.remove("active");
+        if (clearBtn) clearBtn.style.display = "none";
+      } else {
+        // Activate
+        container.querySelectorAll(".topic-chip.active").forEach((b) => b.classList.remove("active"));
+        reviewsState.activeTopicSlug = slug;
+        reviewsState.activeTopicKeywords = keywords;
+        btn.classList.add("active");
+        if (clearBtn) clearBtn.style.display = "inline-flex";
+      }
+
+      reviewsState.currentPage = 1;
+      loadReviews();
+    });
+  });
+
+  if (clearBtn) {
+    clearBtn.addEventListener("click", () => {
+      reviewsState.activeTopicSlug = null;
+      reviewsState.activeTopicKeywords = [];
+      container.querySelectorAll(".topic-chip.active").forEach((b) => b.classList.remove("active"));
+      clearBtn.style.display = "none";
+      reviewsState.currentPage = 1;
+      loadReviews();
+    });
+  }
+}
+
 async function loadReviews() {
   if (!supabaseClient) { updateReviewsTable([], "Supabase client not initialized."); return; }
 
@@ -330,7 +406,13 @@ async function loadReviewsFromTable(tableName, sourceLabel) {
     end.setDate(end.getDate() + 1);
     query = query.lt("published_at", end.toISOString().split("T")[0]);
   }
-  if (reviewsState.filters.comment) query = query.ilike("text", `%${reviewsState.filters.comment}%`);
+  if (reviewsState.filters.comment) {
+    query = query.ilike("text", `%${reviewsState.filters.comment}%`);
+  } else if (reviewsState.activeTopicKeywords.length > 0) {
+    // Topic chip active: OR search across all topic keywords
+    const orCond = reviewsState.activeTopicKeywords.map((kw) => `text.ilike.%${kw}%`).join(",");
+    query = query.or(orCond);
+  }
 
   query = query.order("published_at", { ascending: false });
   const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
@@ -340,7 +422,7 @@ async function loadReviewsFromTable(tableName, sourceLabel) {
   if (error) throw error;
 
   updateCountAndPagination(count || 0, from);
-  updateReviewsTable((data || []).map(r => ({ ...r, source: sourceLabel })), null);
+  updateReviewsTable((data || []).map((r) => ({ ...r, source: sourceLabel })), null);
 }
 
 async function loadAllSourceReviews() {
@@ -486,6 +568,11 @@ function setupReviewsView() {
     if (filterDateTo) filterDateTo.value = "";
     if (filterComment) filterComment.value = "";
     reviewsState.filters = { source: "", clinic: "", rating: "", dateFrom: "", dateTo: "", comment: "" };
+    reviewsState.activeTopicSlug = null;
+    reviewsState.activeTopicKeywords = [];
+    document.querySelectorAll(".topic-chip.active").forEach((b) => b.classList.remove("active"));
+    const clearTopicBtn = document.getElementById("clear-topic-filter");
+    if (clearTopicBtn) clearTopicBtn.style.display = "none";
     reviewsState.currentPage = 1;
     loadReviews();
   });

@@ -57,8 +57,10 @@ const CLINIC_MATCHERS = [
   { name: "Neko Health Marylebone", tokens: ["marylebone", "w1"] },
   { name: "Neko Health Spitalfields", tokens: ["spitalfields", "liverpool street"] },
   { name: "Neko Health Manchester", tokens: ["manchester", "lincoln square"] },
-  { name: "Neko Health Ostermalmstorg", tokens: ["östermalm", "ostermalm", "ostermalmstorg", "stockholm", "sweden"] },
   { name: "Neko Health Covent Garden", tokens: ["covent garden"] },
+  { name: "Neko Health Birmingham", tokens: ["birmingham", "livery street"] },
+  { name: "Neko Health Victoria", tokens: ["victoria"] },
+  { name: "Neko Health Östermalm", tokens: ["östermalm", "ostermalm", "ostermalmstorg", "stockholm", "sweden", "swedish"] },
 ];
 
 if (!supabaseUrl || !supabaseServiceRoleKey) {
@@ -74,7 +76,7 @@ serve(async (req) => {
   }
 
   try {
-    const { prompt, sources = ["reviews"], useFallback = false, filters = null } = await req.json();
+    const { prompt, sources = ["reviews"], useFallback = false, filters = null, topicSlug = null } = await req.json();
     if (!prompt || typeof prompt !== "string") {
       return respond({ error: "prompt is required" }, 400);
     }
@@ -83,16 +85,41 @@ serve(async (req) => {
       global: { headers: { "X-Client-Info": "nekovibe-edge-function" } },
     });
 
-    // Detect clinic and source type from prompt
+    // Load topic keywords if a topic chip is active in the frontend
+    let topicKeywords: string[] = [];
+    if (topicSlug) {
+      const { data: topicData } = await supabase
+        .from("review_topics")
+        .select("keywords")
+        .eq("slug", topicSlug)
+        .single();
+      if (topicData?.keywords) topicKeywords = topicData.keywords;
+    }
+
+    // Smart intent extraction: LLM parses the question for clinic, date, topic keywords
+    const today = new Date().toISOString().split("T")[0];
+    const intent = await extractIntent(prompt, today);
+
+    // Merge with explicit UI filters (UI takes precedence over extracted)
     const normalizedFilters = normalizeFilters(filters);
-    const detectedClinics = detectClinics(prompt);
+    const detectedClinics = intent.clinics.length ? intent.clinics : detectClinics(prompt);
     const detectedSourceType = detectSourceType(prompt, sources);
     const clinics = normalizedFilters.clinic.length ? normalizedFilters.clinic : detectedClinics;
-    const hasDateFilter = Boolean(normalizedFilters.dateFrom || normalizedFilters.dateTo);
+
+    // Merge dates: UI filters override intent-extracted dates
+    const mergedFilters = {
+      ...normalizedFilters,
+      dateFrom: normalizedFilters.dateFrom || intent.dateFrom || "",
+      dateTo: normalizedFilters.dateTo || intent.dateTo || "",
+    };
+    const hasDateFilter = Boolean(mergedFilters.dateFrom || mergedFilters.dateTo);
+
+    // Combine topic slug keywords with intent keywords for richer search
+    const allTopicKeywords = [...new Set([...topicKeywords, ...intent.topicKeywords])];
 
     // If fallback is requested, run raw data analysis (fast SQL, no LLM)
     if (useFallback) {
-      const fallbackAnswer = await generateFallbackAnswer(supabase, prompt, clinics, normalizedFilters);
+      const fallbackAnswer = await generateFallbackAnswer(supabase, prompt, clinics, mergedFilters);
       return respond(
         {
           answer: fallbackAnswer ?? "I couldn't generate a fallback answer right now.",
@@ -110,12 +137,12 @@ serve(async (req) => {
     const hasReviewsSource = sources.includes("reviews");
     const onlyArticles = hasArticlesSource && !hasReviewsSource;
 
-    // Step 1: Fetch relevant summaries (ONLY if not articles-only)
+    // Step 1: Fetch relevant summaries (ONLY if not articles-only or date-filtered)
     const summaries = onlyArticles || hasDateFilter ? [] : await fetchSummaries(supabase, clinics, detectedSourceType);
 
     // Step 1.5: Fetch Tavily/Web insights (ALWAYS if articles selected, REQUIRED if articles-only)
     const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
-    
+
     // If articles-only and no insights available, return early
     if (onlyArticles && perplexityInsights.length === 0) {
       return respond({
@@ -124,17 +151,17 @@ serve(async (req) => {
       }, 200);
     }
 
-    // Step 2: Perform targeted text search on feedback_items (ONLY if not articles-only)
+    // Step 2: Targeted search using intent-extracted keywords + topic keywords
     const searchResults = onlyArticles ? [] : await searchFeedbackItems(
       supabase,
       prompt,
       clinics,
       detectedSourceType,
-      normalizedFilters,
+      mergedFilters,
+      allTopicKeywords,
     );
 
-    // Step 3: Build single LLM prompt with summaries + snippets + Tavily/Web insights
-    // If articles-only, only use Tavily insights
+    // Step 3: Build LLM prompt with summaries + snippets + web insights
     const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights, onlyArticles);
 
     return respond(
@@ -272,9 +299,10 @@ async function searchFeedbackItems(
   clinics: string[],
   sourceType: string | null,
   filters: { clinic: string[]; dateFrom?: string; dateTo?: string },
+  extraKeywords: string[] = [],
 ): Promise<any[]> {
-  // Extract keywords from prompt for search
-  const keywords = extractKeywords(prompt);
+  // Merge prompt keywords with intent/topic keywords for richer search
+  const keywords = [...new Set([...extractKeywords(prompt), ...extraKeywords])];
   if (keywords.length === 0) {
     return [];
   }
@@ -377,6 +405,38 @@ async function searchFeedbackItems(
       date: item.published_at ? new Date(item.published_at).toISOString().split("T")[0] : null,
       table: "google_reviews",
     })));
+  }
+
+  // Search trustpilot_reviews table
+  let tpQuery = supabase
+    .from("trustpilot_reviews")
+    .select("id, clinic_name, rating, text, title, author_name, published_at")
+    .limit(maxSearchResults);
+
+  if (clinics.length > 0) {
+    tpQuery = tpQuery.in("clinic_name", clinics);
+  }
+
+  tpQuery = applyDateRange(tpQuery, "published_at", filters.dateFrom, filters.dateTo);
+
+  const tpOrConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
+  if (tpOrConditions) tpQuery = tpQuery.or(tpOrConditions);
+  tpQuery = tpQuery.order("published_at", { ascending: false });
+
+  const { data: tpData, error: tpError } = await tpQuery;
+  if (!tpError && tpData) {
+    results.push(
+      ...tpData.map((item: any) => ({
+        id: `trustpilot_${item.id}`,
+        clinic_id: item.clinic_name,
+        source_type: "trustpilot_review",
+        text: truncate(item.text || item.title || "", 300),
+        rating: item.rating,
+        author: item.author_name,
+        date: item.published_at ? new Date(item.published_at).toISOString().split("T")[0] : null,
+        table: "trustpilot_reviews",
+      })),
+    );
   }
 
   // Also search articles table
@@ -712,6 +772,87 @@ async function generateAnswerWithOpenAI(
 
   const completion = await response.json();
   return completion?.choices?.[0]?.message?.content?.trim() ?? null;
+}
+
+interface Intent {
+  clinics: string[];
+  country: string | null;
+  dateFrom: string | null;
+  dateTo: string | null;
+  topicKeywords: string[];
+  questionType: string;
+}
+
+async function extractIntent(prompt: string, today: string): Promise<Intent> {
+  const fallback: Intent = {
+    clinics: [],
+    country: null,
+    dateFrom: null,
+    dateTo: null,
+    topicKeywords: extractKeywords(prompt),
+    questionType: "general",
+  };
+
+  if (!openaiApiKey) return fallback;
+
+  try {
+    const res = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0,
+        response_format: { type: "json_object" },
+        messages: [
+          {
+            role: "user",
+            content: `Today is ${today}. Neko Health clinics: Marylebone, Spitalfields, Covent Garden, Manchester, Birmingham, Victoria (all UK), Östermalm (Stockholm, Sweden).
+
+Extract structured search intent from this question. Return ONLY valid JSON:
+{
+  "clinics": [],
+  "country": null,
+  "dateFrom": null,
+  "dateTo": null,
+  "topicKeywords": [],
+  "questionType": "general"
+}
+
+Rules:
+- "clinics": full names like ["Neko Health Manchester"] — only if explicitly mentioned
+- "country": "UK", "SE", or null
+- "dateFrom"/"dateTo": ISO dates (YYYY-MM-DD) if time period implied (e.g. "last month", "this week", "Q1") — compute from today
+- "topicKeywords": 3-8 lowercase search terms that directly relate to the question topic
+- "questionType": one of "complaint", "praise", "trend", "comparison", "general"
+
+Question: "${prompt.replace(/"/g, "'")}"`
+          },
+        ],
+      }),
+    });
+
+    if (!res.ok) return fallback;
+    const data = await res.json();
+    const content = data.choices?.[0]?.message?.content;
+    if (!content) return fallback;
+
+    const parsed = JSON.parse(content);
+    return {
+      clinics: Array.isArray(parsed.clinics) ? parsed.clinics.filter((c: any) => typeof c === "string") : [],
+      country: typeof parsed.country === "string" ? parsed.country : null,
+      dateFrom: typeof parsed.dateFrom === "string" ? parsed.dateFrom : null,
+      dateTo: typeof parsed.dateTo === "string" ? parsed.dateTo : null,
+      topicKeywords: Array.isArray(parsed.topicKeywords) && parsed.topicKeywords.length > 0
+        ? parsed.topicKeywords
+        : extractKeywords(prompt),
+      questionType: typeof parsed.questionType === "string" ? parsed.questionType : "general",
+    };
+  } catch {
+    return fallback;
+  }
 }
 
 function detectClinics(prompt: string): string[] {

@@ -339,28 +339,30 @@ async function generateSummary(
     })
     .join("\n\n");
 
-  // Generate summary via OpenAI
-  const summaryPrompt = `You are analyzing user feedback about Neko Health (health check clinics). Below are ${items.length} feedback items (reviews, articles, or social posts).
+  // Generate summary via OpenAI — structured for Customer Support Lead review
+  const summaryPrompt = `You are a Customer Experience Analyst summarizing feedback for Neko Health (preventive health check clinics in UK and Sweden). Below are ${items.length} feedback items.
 
-Your task: Create a comprehensive summary that captures:
-- Recurring themes and patterns
-- Strengths and positive aspects mentioned
-- Weaknesses, issues, or concerns raised
-- Specific "wow" moments or standout experiences
-- Any notable trends or changes over time
-- Concrete examples when relevant
+Structure your summary around these 10 dimensions a Customer Support Lead monitors. For each, be factual and quantify when possible (e.g. "12 of 30 reviews mention..."). Write "No data" if a dimension has no relevant mentions.
 
-Important:
-- This is a summary of USER FEEDBACK, not marketing copy
-- Be honest and balanced
-- Quantify when possible (e.g., "many users mention...", "several reviews note...")
-- Highlight both positive and negative feedback
-- If there are conflicting views, mention both sides
+1. **Rating distribution** — Star breakdown and overall average
+2. **Top praises** — The 3 most frequently complimented aspects
+3. **Top complaints** — The 3 most recurring issues or frustrations
+4. **Wait times & efficiency** — Queues, punctuality, speed of results delivery
+5. **Staff & doctor quality** — Clinical and non-clinical staff, bedside manner, professionalism
+6. **Booking & admin** — Ease of booking, rescheduling, reminders, communication
+7. **Results & follow-up** — How test results are communicated; clarity, speed, support
+8. **Facility & technology** — Equipment, cleanliness, modern feel, app/digital experience
+9. **Value for money** — Whether price feels fair vs. perceived quality
+10. **Emerging signals** — New themes, sharp spikes, unusual mentions, or early-warning complaints
+
+Rules:
+- Be factual and balanced — this is operational data, not marketing copy
+- Quantify: "X of Y reviews mention..."
+- Keep each dimension to 1-2 sentences max
+- If a dimension has no data, write "No data"
 
 Feedback items:
-${itemsText}
-
-Provide a clear, structured summary (2-4 paragraphs) that would help someone understand what people are saying about Neko Health based on this data.`;
+${itemsText}`;
 
   const summaryText = await callOpenAI(summaryPrompt);
 

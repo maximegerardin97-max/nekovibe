@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "nekovibe",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "web/nekovibe", "-l", "3456"],
+      "port": 3456
+    }
+  ]
+}

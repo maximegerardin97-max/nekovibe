@@ -43,3 +43,7 @@ jobs:
       - name: Generate/refresh summaries
         run: npx ts-node scripts/generate-summaries.ts
 
+      - name: Generate/refresh review topics
+        run: npx ts-node scripts/generate-topics.ts
+        continue-on-error: true
+
