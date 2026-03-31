@@ -18,7 +18,7 @@ function initializeInternalReviews() {
   if (!internalSupabaseClient) {
     // Try multiple ways to get Supabase credentials
     let supabaseUrl = document.body.dataset.supabaseUrl || "";
-    let supabaseAnonKey = document.body.dataset.supabaseAnonKey || "";
+    let supabaseAnonKey = document.body.dataset.apikey || "";
     
     // If not in dataset, try to get from the main app's supabaseClient if it exists
     if (!supabaseUrl && window.supabaseClient) {
