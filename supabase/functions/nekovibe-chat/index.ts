@@ -197,48 +197,45 @@ async function fetchAggregateStats(
   filters: { dateFrom?: string; dateTo?: string; ratingMax?: number | null },
 ): Promise<string> {
   const tables: { name: string; label: string }[] = [];
-
-  if (!sourceType || sourceType === "google_review") tables.push({ name: "google_reviews", label: "Google Reviews" });
+  if (!sourceType || sourceType === "google_review")     tables.push({ name: "google_reviews",    label: "Google" });
   if (!sourceType || sourceType === "trustpilot_review") tables.push({ name: "trustpilot_reviews", label: "Trustpilot" });
 
   const lines: string[] = [];
 
   for (const table of tables) {
     try {
-      // Fetch all rows (no default 1000-row cap) — rating column only
-      let q = supabase.from(table.name).select("rating").limit(10000);
-      if (clinics.length > 0) q = q.in("clinic_name", clinics);
-      q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
-      if (filters.ratingMax) q = q.lte("rating", filters.ratingMax);
-
-      const { data, error } = await q;
-      if (error) {
-        console.error(`fetchAggregateStats error for ${table.name}:`, error);
-        lines.push(`${table.label} — query error: ${error.message}`);
-        continue;
-      }
-      if (!data || data.length === 0) {
-        lines.push(`${table.label} — 0 reviews`);
-        continue;
-      }
-
-      const total = data.length;
       const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-      for (const row of data) {
-        const r = Number(row.rating);
-        if (r >= 1 && r <= 5) dist[r]++;
+      let total = 0;
+
+      // One count query per star level — avoids row-limit issues entirely
+      for (let star = 1; star <= 5; star++) {
+        let q = supabase
+          .from(table.name)
+          .select("*", { count: "exact", head: true })
+          .eq("rating", star);
+        if (clinics.length > 0) q = q.in("clinic_name", clinics);
+        q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
+        if (filters.ratingMax && star > filters.ratingMax) { dist[star] = 0; continue; }
+        const { count, error } = await q;
+        if (error) { console.error(`${table.name} star=${star} error:`, error.message); continue; }
+        dist[star] = count ?? 0;
+        total += dist[star];
       }
 
-      const avg = (data.reduce((s: number, r: any) => s + (Number(r.rating) || 0), 0) / total).toFixed(2);
+      if (total === 0) { lines.push(`${table.label}: 0 reviews`); continue; }
 
-      lines.push(`${table.label} — ${total} total reviews, avg ${avg}/5`);
+      const avg = (
+        (1*dist[1] + 2*dist[2] + 3*dist[3] + 4*dist[4] + 5*dist[5]) / total
+      ).toFixed(2);
+
+      lines.push(`${table.label}: ${total} reviews, avg ${avg}/5`);
       for (let s = 5; s >= 1; s--) {
         const pct = ((dist[s] / total) * 100).toFixed(1);
-        lines.push(`  ${s}★: ${dist[s]} (${pct}%)`);
+        lines.push(`  ${s} stars: ${dist[s]} (${pct}%)`);
       }
     } catch (e: any) {
-      console.error(`fetchAggregateStats exception for ${table.name}:`, e);
-      lines.push(`${table.label} — exception: ${e.message}`);
+      console.error(`fetchAggregateStats exception ${table.name}:`, e);
+      lines.push(`${table.label}: error — ${e.message}`);
     }
   }
 
