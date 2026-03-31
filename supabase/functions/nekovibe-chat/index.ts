@@ -920,36 +920,64 @@ Rules:
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
 }
 
+async function callOpenAI(messages: { role: string; content: string }[], temperature = 0.0): Promise<string | null> {
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${openaiApiKey}` },
+    body: JSON.stringify({ model: openaiModel, temperature, messages }),
+  });
+  if (!response.ok) {
+    console.error("OpenAI API error:", await response.text());
+    return null;
+  }
+  const completion = await response.json();
+  return completion?.choices?.[0]?.message?.content?.trim() ?? null;
+}
+
 async function generateAnswerWithOpenAI(
   prompt: string,
   systemMessage: string,
   userMessage: string,
   articlesOnly: boolean = false,
 ): Promise<string | null> {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${openaiApiKey}`,
+  const temperature = articlesOnly ? 0.5 : 0.0;
+
+  // Pass 1: generate the answer
+  const draft = await callOpenAI([
+    { role: "system", content: systemMessage },
+    { role: "user", content: userMessage },
+  ], temperature);
+
+  if (!draft || articlesOnly) return draft;
+
+  // Pass 2: self-critique — did the draft actually answer the question?
+  const critique = await callOpenAI([
+    {
+      role: "system",
+      content: `You are a ruthless editor. Your only job is to check whether a given answer fully satisfies the user's question and rewrite it if not.
+
+Criteria:
+- Did it answer exactly what was asked (right number of items, right topic, right timeframe)?
+- Are the numbers real and specific, not rounded estimates like 30/20/15/10/5?
+- Does each point name the root cause, not just the symptom?
+- Does each point say who fixes it and how, in one concrete sentence?
+- Are quotes verbatim from actual reviews, not paraphrased?
+- Is the format plain text, no markdown, no ** bold?
+
+If the answer passes all criteria, return it unchanged.
+If it fails any criterion, rewrite it from scratch — sharper, more specific, fully compliant.
+Return only the final answer. No meta-commentary.`,
     },
-    body: JSON.stringify({
-      model: openaiModel,
-      temperature: articlesOnly ? 0.5 : 0.0,
-      messages: [
-        { role: "system", content: systemMessage },
-        { role: "user", content: userMessage },
-      ],
-    }),
-  });
+    {
+      role: "user",
+      content: `Original question: "${prompt}"
 
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error("OpenAI API error:", errText);
-    return null;
-  }
+Draft answer:
+${draft}`,
+    },
+  ], 0.0);
 
-  const completion = await response.json();
-  return completion?.choices?.[0]?.message?.content?.trim() ?? null;
+  return critique ?? draft;
 }
 
 interface Intent {
