@@ -985,9 +985,14 @@ function detectClinics(prompt: string): string[] {
 function detectSourceType(prompt: string, sources: string[]): string | null {
   const lowered = prompt.toLowerCase();
 
-  // Check explicit source mentions first — order matters
-  if (lowered.includes("trustpilot")) return "trustpilot_review";
-  if (lowered.includes("google review") || lowered.includes("google reviews")) return "google_review";
+  const hasTrustpilot = lowered.includes("trustpilot");
+  const hasGoogle = lowered.includes("google review") || lowered.includes("google reviews") || lowered.includes("google");
+
+  // If both sources mentioned explicitly → return null (all sources)
+  if (hasTrustpilot && hasGoogle) return null;
+
+  if (hasTrustpilot) return "trustpilot_review";
+  if (hasGoogle) return "google_review";
   if (lowered.includes("article") || lowered.includes("press") || sources.includes("articles")) return "press_article";
   if (lowered.includes("social") || lowered.includes("post")) return "social_post";
   if (lowered.includes("blog")) return "blog_post";
