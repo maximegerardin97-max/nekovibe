@@ -204,26 +204,41 @@ async function fetchAggregateStats(
   const lines: string[] = [];
 
   for (const table of tables) {
-    let q = supabase.from(table.name).select("rating", { count: "exact" });
-    if (clinics.length > 0) q = q.in("clinic_name", clinics);
-    q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
-    if (filters.ratingMax) q = q.lte("rating", filters.ratingMax);
+    try {
+      // Fetch all rows (no default 1000-row cap) — rating column only
+      let q = supabase.from(table.name).select("rating").limit(10000);
+      if (clinics.length > 0) q = q.in("clinic_name", clinics);
+      q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
+      if (filters.ratingMax) q = q.lte("rating", filters.ratingMax);
 
-    const { data, error } = await q;
-    if (error || !data) continue;
+      const { data, error } = await q;
+      if (error) {
+        console.error(`fetchAggregateStats error for ${table.name}:`, error);
+        lines.push(`${table.label} — query error: ${error.message}`);
+        continue;
+      }
+      if (!data || data.length === 0) {
+        lines.push(`${table.label} — 0 reviews`);
+        continue;
+      }
 
-    const total = data.length;
-    const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    for (const row of data) { if (row.rating >= 1 && row.rating <= 5) dist[row.rating]++; }
+      const total = data.length;
+      const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      for (const row of data) {
+        const r = Number(row.rating);
+        if (r >= 1 && r <= 5) dist[r]++;
+      }
 
-    const avg = total > 0
-      ? (data.reduce((s: number, r: any) => s + (r.rating || 0), 0) / total).toFixed(2)
-      : "n/a";
+      const avg = (data.reduce((s: number, r: any) => s + (Number(r.rating) || 0), 0) / total).toFixed(2);
 
-    lines.push(`${table.label} — ${total} total reviews, avg ${avg}/5`);
-    for (let s = 5; s >= 1; s--) {
-      const pct = total > 0 ? ((dist[s] / total) * 100).toFixed(1) : "0.0";
-      lines.push(`  ${s}★: ${dist[s]} (${pct}%)`);
+      lines.push(`${table.label} — ${total} total reviews, avg ${avg}/5`);
+      for (let s = 5; s >= 1; s--) {
+        const pct = ((dist[s] / total) * 100).toFixed(1);
+        lines.push(`  ${s}★: ${dist[s]} (${pct}%)`);
+      }
+    } catch (e: any) {
+      console.error(`fetchAggregateStats exception for ${table.name}:`, e);
+      lines.push(`${table.label} — exception: ${e.message}`);
     }
   }
 
