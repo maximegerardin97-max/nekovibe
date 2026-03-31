@@ -10,7 +10,7 @@ const supabaseUrl = Deno.env.get("SUPABASE_URL") ?? "";
 const supabaseServiceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const openaiApiKey = Deno.env.get("OPENAI_API_KEY") ?? "";
 const openaiModel = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
-const maxSearchResults = Number(Deno.env.get("NEKOVIBE_SEARCH_MAX_RESULTS") ?? "30");
+const maxSearchResults = Number(Deno.env.get("NEKOVIBE_SEARCH_MAX_RESULTS") ?? "100");
 const reviewFetchLimit = Number(Deno.env.get("NEKOVIBE_REVIEW_FETCH_LIMIT") ?? "300");
 const chunkSize = Number(Deno.env.get("NEKOVIBE_CHUNK_SIZE") ?? "25");
 
@@ -793,7 +793,7 @@ CRITICAL RULES:
 Your answers must be extremely precise, actionable, and concise. You are talking to yourself — no need to explain context or be polite. Get straight to what matters.
 
 CRITICAL RULES:
-- If the user asks for N items (top 5, list of 10, etc.) you MUST return EXACTLY N items. Never fewer.
+- If the user asks for N items (top 5, list of 10, etc.) you MUST return EXACTLY N items. Never fewer. If major issues run out, go deeper: sub-issues, emerging signals, single-mention complaints, clinic-specific patterns, positive feedback gaps — anything actionable counts. Do NOT stop early.
 - Lead each point with the number of reviews and percentage. "23 reviews (2.3%) — booking flow broken at payment step."
 - After the number, quote at least one real user verbatim in brackets. E.g. ["Paid £299 and couldn't book for 3 months"]
 - Always attribute to clinic and timeframe when the data allows. Flag if trending worse.
