@@ -139,8 +139,10 @@ serve(async (req) => {
     const hasReviewsSource = sources.includes("reviews");
     const onlyArticles = hasArticlesSource && !hasReviewsSource;
 
-    // Step 1: Fetch relevant summaries (ONLY if not articles-only or date-filtered)
-    const summaries = onlyArticles || hasDateFilter ? [] : await fetchSummaries(supabase, clinics, detectedSourceType);
+    // Step 1: Fetch relevant summaries (skip if source-specific — summaries are cross-source)
+    const summaries = onlyArticles || hasDateFilter || detectedSourceType
+      ? []
+      : await fetchSummaries(supabase, clinics, detectedSourceType);
 
     // Step 1.5: Fetch Tavily/Web insights (ALWAYS if articles selected, REQUIRED if articles-only)
     const perplexityInsights = hasArticlesSource ? await fetchPerplexityInsights(supabase) : [];
@@ -148,10 +150,15 @@ serve(async (req) => {
     // If articles-only and no insights available, return early
     if (onlyArticles && perplexityInsights.length === 0) {
       return respond({
-        answer: "No web search insights are currently available. The system is configured to fetch comprehensive market analysis and recent news trends, but data collection is pending. Please try again later or use the 'Run another web search' button for a real-time search.",
+        answer: "No web search insights are currently available.",
         usedSources: ["articles"],
       }, 200);
     }
+
+    // Step 1.6: Fetch exact aggregate stats (rating distribution) — always exact, never sampled
+    const aggregateStats = onlyArticles ? null : await fetchAggregateStats(
+      supabase, detectedSourceType, clinics, mergedFilters
+    );
 
     // Step 2: Targeted search using intent-extracted keywords + topic keywords
     const searchResults = onlyArticles ? [] : await searchFeedbackItems(
@@ -164,7 +171,7 @@ serve(async (req) => {
     );
 
     // Step 3: Build LLM prompt with summaries + snippets + web insights
-    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights, onlyArticles);
+    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights, onlyArticles, aggregateStats);
 
     return respond(
       {
@@ -182,6 +189,46 @@ serve(async (req) => {
     return respond({ error: "Unexpected error", details: `${error}` }, 500);
   }
 });
+
+async function fetchAggregateStats(
+  supabase: any,
+  sourceType: string | null,
+  clinics: string[],
+  filters: { dateFrom?: string; dateTo?: string; ratingMax?: number | null },
+): Promise<string> {
+  const tables: { name: string; label: string }[] = [];
+
+  if (!sourceType || sourceType === "google_review") tables.push({ name: "google_reviews", label: "Google Reviews" });
+  if (!sourceType || sourceType === "trustpilot_review") tables.push({ name: "trustpilot_reviews", label: "Trustpilot" });
+
+  const lines: string[] = [];
+
+  for (const table of tables) {
+    let q = supabase.from(table.name).select("rating", { count: "exact" });
+    if (clinics.length > 0) q = q.in("clinic_name", clinics);
+    q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
+    if (filters.ratingMax) q = q.lte("rating", filters.ratingMax);
+
+    const { data, error } = await q;
+    if (error || !data) continue;
+
+    const total = data.length;
+    const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (const row of data) { if (row.rating >= 1 && row.rating <= 5) dist[row.rating]++; }
+
+    const avg = total > 0
+      ? (data.reduce((s: number, r: any) => s + (r.rating || 0), 0) / total).toFixed(2)
+      : "n/a";
+
+    lines.push(`${table.label} — ${total} total reviews, avg ${avg}/5`);
+    for (let s = 5; s >= 1; s--) {
+      const pct = total > 0 ? ((dist[s] / total) * 100).toFixed(1) : "0.0";
+      lines.push(`  ${s}★: ${dist[s]} (${pct}%)`);
+    }
+  }
+
+  return lines.length > 0 ? lines.join("\n") : "No aggregate data available.";
+}
 
 async function fetchSummaries(
   supabase: any,
@@ -685,6 +732,7 @@ async function generateAnswer(
   clinics: string[],
   perplexityInsights: any[] = [],
   articlesOnly: boolean = false,
+  aggregateStats: string | null = null,
 ): Promise<string | null> {
   // Extract keywords from prompt for relevance filtering
   const questionKeywords = extractKeywords(prompt);
@@ -774,29 +822,30 @@ IMPORTANT INSTRUCTIONS:
     // Mixed or reviews-only: use all sources
     userMessage = `Question: "${prompt}"
 
+Context - Exact Aggregate Stats (100% accurate, full dataset — use these for all counts/distributions):
+${aggregateStats || "Not available."}
+
 Context - Summaries (overall patterns):
 ${summariesBlock || "No summaries available."}
 
-Context - Web Search Market Intelligence (comprehensive web analysis):
+Context - Web Search Market Intelligence:
 ${perplexityBlock || "No web search insights available."}
 
-Context - Example Snippets (concrete examples):
+Context - Individual Review Snippets:
 ${snippetsBlock || "No specific examples found."}
 
 Instructions:
-- Answer concisely with numbers first. Maximum 100 words unless detail is required.
-- Use ONLY the summaries and snippets above
-- Lead with: "[Clinic]: X of Y reviews (Z%) [finding]"
+- Use Exact Aggregate Stats as primary source for all counts, totals, distributions
+- Answer concisely with numbers first. Maximum 150 words unless detail is required.
+- Lead with: "[Source/Clinic]: X of Y reviews (Z%) [finding]"
 - Use bullet points for multiple data points
 - If targeting specific clinics (${clinics.length ? clinics.join(", ") : "all clinics"}), provide numbers for each
-- If a period has no problems, say "No issues — X reviews, all positive" rather than claiming insufficient data
+- If a period has no problems, say "No issues — X reviews, all positive"
 - Always give a concrete answer; never suggest querying more data
 
 FORMAT REQUIREMENTS:
 - Always include: total count, specific counts, percentages
-- Example: "Marylebone: 45/200 (22.5%) mention wait times. Spitalfields: 12/150 (8%)."
-- For trends: "Last 30 days: 23 complaints vs 8 previous (+187%)"
-- For ratings: "4.2/5 avg (180 five-star, 45 four-star, 12 three-star, 3 two-star, 0 one-star)"`;
+- For ratings: "4.2/5 avg (180★5, 45★4, 12★3, 3★2, 0★1)"`;
   }
 
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
