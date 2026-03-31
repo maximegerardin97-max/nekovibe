@@ -293,6 +293,57 @@ async function fetchSummaries(
   return summaries.slice(0, 8);
 }
 
+async function fetchRecentReviewsSample(
+  supabase: any,
+  clinics: string[],
+  sourceType: string | null,
+  filters: { clinic: string[]; dateFrom?: string; dateTo?: string },
+): Promise<any[]> {
+  // For broad questions with no keywords, fetch a spread of recent reviews from all sources
+  const perTable = Math.ceil(reviewFetchLimit / 2);
+  const results: any[] = [];
+
+  const applyClinicAndDate = (q: any, clinicCol: string, dateCol: string) => {
+    if (clinics.length > 0) q = q.in(clinicCol, clinics);
+    q = applyDateRange(q, dateCol, filters.dateFrom, filters.dateTo);
+    return q;
+  };
+
+  // Google reviews
+  if (!sourceType || sourceType === "google_review") {
+    let q = supabase.from("google_reviews")
+      .select("id, clinic_name, rating, text, author_name, published_at")
+      .order("published_at", { ascending: false })
+      .limit(perTable);
+    q = applyClinicAndDate(q, "clinic_name", "published_at");
+    const { data } = await q;
+    if (data) results.push(...data.map((r: any) => ({
+      id: `google_${r.id}`, clinic_id: r.clinic_name, source_type: "google_review",
+      text: truncate(r.text, 300), rating: r.rating, author: r.author_name,
+      date: r.published_at?.split("T")[0] ?? null, table: "google_reviews",
+    })));
+  }
+
+  // Trustpilot reviews
+  if (!sourceType || sourceType === "trustpilot_review") {
+    let q = supabase.from("trustpilot_reviews")
+      .select("id, clinic_name, rating, text, title, author_name, published_at")
+      .order("published_at", { ascending: false })
+      .limit(perTable);
+    q = applyClinicAndDate(q, "clinic_name", "published_at");
+    const { data } = await q;
+    if (data) results.push(...data.map((r: any) => ({
+      id: `trustpilot_${r.id}`, clinic_id: r.clinic_name, source_type: "trustpilot_review",
+      text: truncate(r.text || r.title || "", 300), rating: r.rating, author: r.author_name,
+      date: r.published_at?.split("T")[0] ?? null, table: "trustpilot_reviews",
+    })));
+  }
+
+  return results.sort((a, b) =>
+    (b.date ? new Date(b.date).getTime() : 0) - (a.date ? new Date(a.date).getTime() : 0)
+  ).slice(0, reviewFetchLimit);
+}
+
 async function searchFeedbackItems(
   supabase: any,
   prompt: string,
@@ -303,8 +354,10 @@ async function searchFeedbackItems(
 ): Promise<any[]> {
   // Merge prompt keywords with intent/topic keywords for richer search
   const keywords = [...new Set([...extractKeywords(prompt), ...extraKeywords])];
+
+  // Broad question — no meaningful keywords found. Return a representative sample.
   if (keywords.length === 0) {
-    return [];
+    return fetchRecentReviewsSample(supabase, clinics, sourceType, filters);
   }
 
   const results: any[] = [];

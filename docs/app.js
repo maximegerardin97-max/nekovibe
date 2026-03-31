@@ -10,13 +10,21 @@ let supabaseClient = null;
 window.supabaseClient = null;
 
 function initSupabaseClient() {
-  if (supabaseUrl && supabaseKey && typeof supabase !== "undefined") {
-    supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
-    window.supabaseClient = supabaseClient;
-    if (typeof loadClinics === "function") loadClinics();
-    return true;
+  if (supabaseClient) return true; // already done
+  if (typeof supabase === "undefined") {
+    // CDN not loaded yet — keep polling
+    setTimeout(initSupabaseClient, 80);
+    return false;
   }
-  return false;
+  if (!supabaseUrl || !supabaseKey) return false;
+  supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+  window.supabaseClient = supabaseClient;
+  // Trigger all data loads once client is ready
+  if (typeof loadClinics === "function") loadClinics();
+  if (typeof loadTopics === "function") loadTopics();
+  if (typeof loadReviews === "function") loadReviews();
+  if (typeof setupRatingsGraph === "function") setupRatingsGraph();
+  return true;
 }
 
 // ===== Tab Switching =====
@@ -303,21 +311,27 @@ async function loadClinics() {
 // ===== Topic Chips =====
 
 async function loadTopics() {
-  if (!supabaseClient) return;
+  const container = document.getElementById("topic-chips");
+  if (!supabaseClient) {
+    // Will be triggered again by initSupabaseClient once ready
+    if (container) container.innerHTML = '<span class="topic-chips-empty">Connecting…</span>';
+    return;
+  }
   try {
     const { data, error } = await supabaseClient
       .from("review_topics")
       .select("name, slug, sentiment, review_count, keywords")
       .order("review_count", { ascending: false })
       .limit(20);
-    if (error || !data || data.length === 0) {
-      const container = document.getElementById("topic-chips");
-      if (container) container.innerHTML = '<span class="topic-chips-empty">No topics yet — run generate-topics to populate.</span>';
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      if (container) container.innerHTML = '<span class="topic-chips-empty">Topics generating — check back after the next daily refresh.</span>';
       return;
     }
     renderTopicChips(data);
   } catch (e) {
     console.error("Error loading topics:", e);
+    if (container) container.innerHTML = '<span class="topic-chips-empty">Could not load topics.</span>';
   }
 }
 
