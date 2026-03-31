@@ -103,7 +103,8 @@ serve(async (req) => {
     // Merge with explicit UI filters (UI takes precedence over extracted)
     const normalizedFilters = normalizeFilters(filters);
     const detectedClinics = intent.clinics.length ? intent.clinics : detectClinics(prompt);
-    const detectedSourceType = detectSourceType(prompt, sources);
+    // Intent source takes precedence over keyword detection
+    const detectedSourceType = intent.source ?? detectSourceType(prompt, sources);
     const clinics = normalizedFilters.clinic.length ? normalizedFilters.clinic : detectedClinics;
 
     // Merge dates: UI filters override intent-extracted dates
@@ -111,6 +112,7 @@ serve(async (req) => {
       ...normalizedFilters,
       dateFrom: normalizedFilters.dateFrom || intent.dateFrom || "",
       dateTo: normalizedFilters.dateTo || intent.dateTo || "",
+      ratingMax: intent.ratingMax ?? null,
     };
     const hasDateFilter = Boolean(mergedFilters.dateFrom || mergedFilters.dateTo);
 
@@ -297,7 +299,7 @@ async function fetchRecentReviewsSample(
   supabase: any,
   clinics: string[],
   sourceType: string | null,
-  filters: { clinic: string[]; dateFrom?: string; dateTo?: string },
+  filters: { clinic: string[]; dateFrom?: string; dateTo?: string; ratingMax?: number | null },
 ): Promise<any[]> {
   // For broad questions with no keywords, fetch a spread of recent reviews from all sources
   const perTable = Math.ceil(reviewFetchLimit / 2);
@@ -306,6 +308,7 @@ async function fetchRecentReviewsSample(
   const applyClinicAndDate = (q: any, clinicCol: string, dateCol: string) => {
     if (clinics.length > 0) q = q.in(clinicCol, clinics);
     q = applyDateRange(q, dateCol, filters.dateFrom, filters.dateTo);
+    if (filters.ratingMax) q = q.lte("rating", filters.ratingMax);
     return q;
   };
 
@@ -349,7 +352,7 @@ async function searchFeedbackItems(
   prompt: string,
   clinics: string[],
   sourceType: string | null,
-  filters: { clinic: string[]; dateFrom?: string; dateTo?: string },
+  filters: { clinic: string[]; dateFrom?: string; dateTo?: string; ratingMax?: number | null },
   extraKeywords: string[] = [],
 ): Promise<any[]> {
   // Merge prompt keywords with intent/topic keywords for richer search
@@ -441,9 +444,10 @@ async function searchFeedbackItems(
   }
 
   googleQuery = applyDateRange(googleQuery, "published_at", filters.dateFrom, filters.dateTo);
+  if (filters.ratingMax) googleQuery = googleQuery.lte("rating", filters.ratingMax);
 
   const googleOrConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
-  googleQuery = googleQuery.or(googleOrConditions);
+  if (googleOrConditions) googleQuery = googleQuery.or(googleOrConditions);
   googleQuery = googleQuery.order("published_at", { ascending: false });
 
   const { data: googleData, error: googleError } = await googleQuery;
@@ -471,6 +475,7 @@ async function searchFeedbackItems(
   }
 
   tpQuery = applyDateRange(tpQuery, "published_at", filters.dateFrom, filters.dateTo);
+  if (filters.ratingMax) tpQuery = tpQuery.lte("rating", filters.ratingMax);
 
   const tpOrConditions = keywords.map((k) => `text.ilike.%${k}%`).join(",");
   if (tpOrConditions) tpQuery = tpQuery.or(tpOrConditions);
@@ -836,6 +841,8 @@ interface Intent {
   dateTo: string | null;
   topicKeywords: string[];
   questionType: string;
+  source: string | null;
+  ratingMax: number | null;
 }
 
 async function extractIntent(prompt: string, today: string): Promise<Intent> {
@@ -846,6 +853,8 @@ async function extractIntent(prompt: string, today: string): Promise<Intent> {
     dateTo: null,
     topicKeywords: extractKeywords(prompt),
     questionType: "general",
+    source: null,
+    ratingMax: null,
   };
 
   if (!openaiApiKey) return fallback;
@@ -873,7 +882,9 @@ Extract structured search intent from this question. Return ONLY valid JSON:
   "dateFrom": null,
   "dateTo": null,
   "topicKeywords": [],
-  "questionType": "general"
+  "questionType": "general",
+  "source": null,
+  "ratingMax": null
 }
 
 Rules:
@@ -882,6 +893,8 @@ Rules:
 - "dateFrom"/"dateTo": ISO dates (YYYY-MM-DD) if time period implied (e.g. "last month", "this week", "Q1") — compute from today
 - "topicKeywords": 3-8 lowercase search terms that directly relate to the question topic
 - "questionType": one of "complaint", "praise", "trend", "comparison", "general"
+- "source": "trustpilot_review" if question mentions Trustpilot, "google_review" if mentions Google reviews, otherwise null
+- "ratingMax": integer 1-4 if question asks about bad/negative/low/poor reviews or complaints (use 3 for "bad reviews"), null otherwise
 
 Question: "${prompt.replace(/"/g, "'")}"`
           },
@@ -904,6 +917,8 @@ Question: "${prompt.replace(/"/g, "'")}"`
         ? parsed.topicKeywords
         : extractKeywords(prompt),
       questionType: typeof parsed.questionType === "string" ? parsed.questionType : "general",
+      source: typeof parsed.source === "string" ? parsed.source : null,
+      ratingMax: typeof parsed.ratingMax === "number" ? parsed.ratingMax : null,
     };
   } catch {
     return fallback;
@@ -920,20 +935,15 @@ function detectClinics(prompt: string): string[] {
 
 function detectSourceType(prompt: string, sources: string[]): string | null {
   const lowered = prompt.toLowerCase();
-  
-  if (sources.includes("reviews") || lowered.includes("review")) {
-    return "google_review";
-  }
-  if (sources.includes("articles") || lowered.includes("article") || lowered.includes("press")) {
-    return "press_article";
-  }
-  if (sources.includes("social") || lowered.includes("social") || lowered.includes("post")) {
-    return "social_post";
-  }
-  if (lowered.includes("blog")) {
-    return "blog_post";
-  }
-  
+
+  // Check explicit source mentions first — order matters
+  if (lowered.includes("trustpilot")) return "trustpilot_review";
+  if (lowered.includes("google review") || lowered.includes("google reviews")) return "google_review";
+  if (lowered.includes("article") || lowered.includes("press") || sources.includes("articles")) return "press_article";
+  if (lowered.includes("social") || lowered.includes("post")) return "social_post";
+  if (lowered.includes("blog")) return "blog_post";
+
+  // "review/reviews" alone does NOT default to google — return null to search all sources
   return null;
 }
 
