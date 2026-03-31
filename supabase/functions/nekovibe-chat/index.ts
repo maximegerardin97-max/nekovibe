@@ -161,17 +161,25 @@ serve(async (req) => {
     );
 
     // Step 2: Targeted search using intent-extracted keywords + topic keywords
-    const searchResults = onlyArticles ? [] : await searchFeedbackItems(
-      supabase,
-      prompt,
-      clinics,
-      detectedSourceType,
-      mergedFilters,
-      allTopicKeywords,
-    );
+    // For improvement/issue questions, also pull ALL negative reviews (≤3 stars)
+    const [searchResults, negativeReviews] = await Promise.all([
+      onlyArticles ? Promise.resolve([]) : searchFeedbackItems(
+        supabase, prompt, clinics, detectedSourceType, mergedFilters, allTopicKeywords,
+      ),
+      (!onlyArticles && isImprovementQuestion(prompt))
+        ? fetchAllNegativeReviews(supabase, detectedSourceType, clinics, mergedFilters)
+        : Promise.resolve([]),
+    ]);
+
+    // Merge negative reviews into search results, dedup by id
+    const seenIds = new Set(searchResults.map((r: any) => r.id));
+    const mergedResults = [
+      ...searchResults,
+      ...negativeReviews.filter((r: any) => !seenIds.has(r.id)),
+    ];
 
     // Step 3: Build LLM prompt with summaries + snippets + web insights
-    const answer = await generateAnswer(prompt, summaries, searchResults, detectedClinics, perplexityInsights, onlyArticles, aggregateStats);
+    const answer = await generateAnswer(prompt, summaries, mergedResults, detectedClinics, perplexityInsights, onlyArticles, aggregateStats);
 
     return respond(
       {
@@ -404,6 +412,50 @@ async function fetchRecentReviewsSample(
   return results.sort((a, b) =>
     (b.date ? new Date(b.date).getTime() : 0) - (a.date ? new Date(a.date).getTime() : 0)
   ).slice(0, reviewFetchLimit);
+}
+
+function isImprovementQuestion(prompt: string): boolean {
+  const p = prompt.toLowerCase();
+  return [
+    "improv", "fix", "issue", "problem", "complaint", "bad review", "negative",
+    "wrong", "worst", "urgent", "priority", "pain point", "dissatisfi", "disappoint",
+    "concern", "frustrat", "fail", "broken", "lacking", "weak", "poor", "bad",
+  ].some((kw) => p.includes(kw));
+}
+
+async function fetchAllNegativeReviews(
+  supabase: any,
+  sourceType: string | null,
+  clinics: string[],
+  filters: { dateFrom?: string; dateTo?: string },
+): Promise<any[]> {
+  const results: any[] = [];
+
+  const fetchFrom = async (table: string, sourceLabel: string) => {
+    let q = supabase.from(table)
+      .select("id, clinic_name, rating, text, author_name, published_at")
+      .lte("rating", 3)
+      .order("rating", { ascending: true })
+      .order("published_at", { ascending: false })
+      .limit(500);
+    if (clinics.length > 0) q = q.in("clinic_name", clinics);
+    q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
+    const { data } = await q;
+    if (data) results.push(...data.map((r: any) => ({
+      id: `${sourceLabel}_${r.id}`,
+      clinic_id: r.clinic_name,
+      source_type: sourceLabel,
+      text: (r.text || "").slice(0, 600),
+      rating: r.rating,
+      author: r.author_name,
+      date: r.published_at?.split("T")[0] ?? null,
+    })));
+  };
+
+  if (!sourceType || sourceType === "google_review") await fetchFrom("google_reviews", "google_review");
+  if (!sourceType || sourceType === "trustpilot_review") await fetchFrom("trustpilot_reviews", "trustpilot_review");
+
+  return results.sort((a, b) => (a.rating ?? 5) - (b.rating ?? 5));
 }
 
 async function searchFeedbackItems(
