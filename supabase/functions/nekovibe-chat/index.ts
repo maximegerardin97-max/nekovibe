@@ -1233,7 +1233,7 @@ ${chunkContext}
 
 Summarize the key points that answer the question. Highlight recurring themes, quantify counts when possible, and mention strong quotes or issues. Be concise but specific.`;
 
-    const summary = await callOpenAI(chunkPrompt, false);
+    const summary = await callOpenAISimple(chunkPrompt, false);
     if (summary) {
       chunkSummaries.push(summary);
     }
@@ -1255,7 +1255,7 @@ ${chunkSummaries.map((s, idx) => `Chunk ${idx + 1}:\n${s}`).join("\n\n")}
 
 Deliver a single cohesive answer. Reference the rating focus when helpful, quantify sentiment, and mention concrete examples.`;
 
-  const finalAnswer = await callOpenAI(finalPrompt, true);
+  const finalAnswer = await callOpenAISimple(finalPrompt, true);
   return (
     finalAnswer ??
     `${statsBlock}\n\nTop insights:\n${chunkSummaries
@@ -1273,7 +1273,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return chunks;
 }
 
-async function callOpenAI(content: string, finalStep = false): Promise<string | null> {
+async function callOpenAISimple(content: string, finalStep = false): Promise<string | null> {
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
