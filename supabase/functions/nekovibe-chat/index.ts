@@ -883,23 +883,33 @@ IMPORTANT INSTRUCTIONS:
 - Be specific, quantitative, and cite sources when relevant
 - If the insights don't contain information relevant to this specific question, say so explicitly`;
   } else {
-    // Mixed or reviews-only: use all sources
-    userMessage = `Question: "${prompt}"
+    // Detect if the user asked for a specific number of items
+    const listMatch = prompt.match(/\b(\d+)\b/);
+    const requestedN = listMatch ? parseInt(listMatch[1]) : null;
+    const listInstruction = requestedN
+      ? `\nREQUIRED: You must output EXACTLY ${requestedN} numbered items. Count them as you write: 1, 2, 3 ... ${requestedN}. Do not stop before item ${requestedN}. If you run out of major themes, go deeper: sub-issues, single-mention complaints, emerging signals, clinic-specific patterns. Never stop early.\n`
+      : "";
 
-Exact aggregate stats (internal reference — accurate full-dataset counts):
+    const snippetCount = searchResults.length;
+
+    userMessage = `Question: "${prompt}"
+${listInstruction}
+Exact aggregate stats (accurate full-dataset counts — use for totals):
 ${aggregateStats || "Not available."}
 
-Summaries (patterns):
-${summariesBlock || "None."}
+You have ${snippetCount} real customer reviews below. READ ALL OF THEM. Group them by theme. Count how many reviews mention each theme. Use exact quotes from the text.
 
-Snippets (examples):
+Reviews:
 ${snippetsBlock || "None."}
 
+Summaries (background context only):
+${summariesBlock || "None."}
+
 Rules:
-- Plain text only. No **, no ##, no bold, no markdown. Dashes for bullets.
-- Under 150 words. Lead with numbers.
-- Never say "data not provided" or "insufficient data".
-- ONLY output the aggregate stats block (star distribution) if the question explicitly asks for a rating breakdown, distribution, or average. For all other questions, use it as internal context only — do not print it in the answer.`;
+- Plain text only. No **, no ##, no bold, no markdown. Dashes for sub-bullets.
+- Each item: "N. [count] reviews ([X]%) — [theme]. ["exact quote"]"
+- Use actual counts from the reviews above, not estimates.
+- ONLY print the star distribution if explicitly asked for it.`;
   }
 
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
@@ -919,7 +929,7 @@ async function generateAnswerWithOpenAI(
     },
     body: JSON.stringify({
       model: openaiModel,
-      temperature: articlesOnly ? 0.5 : 0.2, // Lower temperature for more factual, consistent responses
+      temperature: articlesOnly ? 0.5 : 0.0,
       messages: [
         { role: "system", content: systemMessage },
         { role: "user", content: userMessage },
