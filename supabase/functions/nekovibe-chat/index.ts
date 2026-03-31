@@ -838,25 +838,22 @@ IMPORTANT INSTRUCTIONS:
 - If the insights don't contain information relevant to this specific question, say so explicitly`;
   } else {
     // Mixed or reviews-only: use all sources
-    userMessage = `EXACT AGGREGATE STATS — USE THESE NUMBERS. DO NOT CONTRADICT THEM:
+    userMessage = `Question: "${prompt}"
+
+Exact aggregate stats (internal reference — accurate full-dataset counts):
 ${aggregateStats || "Not available."}
 
----
-Question: "${prompt}"
----
-
-Supporting context — summaries (patterns, not counts):
+Summaries (patterns):
 ${summariesBlock || "None."}
 
-Supporting context — snippets (individual examples):
+Snippets (examples):
 ${snippetsBlock || "None."}
 
 Rules:
-- Copy the numbers from Exact Aggregate Stats verbatim for any distribution/count/rating question
-- Plain text only — no **, no ##, no bold, no markdown
-- Dashes for bullets. "Google:" / "Trustpilot:" as plain labels
+- Plain text only. No **, no ##, no bold, no markdown. Dashes for bullets.
 - Under 150 words. Lead with numbers.
-- Never say "data not provided" or "insufficient data"`;
+- Never say "data not provided" or "insufficient data".
+- ONLY output the aggregate stats block (star distribution) if the question explicitly asks for a rating breakdown, distribution, or average. For all other questions, use it as internal context only — do not print it in the answer.`;
   }
 
   return await generateAnswerWithOpenAI(prompt, systemMessage, userMessage, articlesOnly);
