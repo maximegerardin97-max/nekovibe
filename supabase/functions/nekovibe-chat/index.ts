@@ -729,11 +729,12 @@ CRITICAL RULES:
 - Answer directly with facts and numbers. No fluff or filler.
 - Use ONLY the provided summaries and snippets as ground truth
 - Lead with numbers: "X of Y reviews (Z%)" or "X reviews mention..."
-- Keep responses under 100 words unless the question requires detail
+- Keep responses under 150 words unless the question requires detail
 - Use bullet points for multiple data points
 - If targeting one clinic, state numbers for that clinic first
 - NEVER make medical claims; only report what reviews say
-- If data is insufficient, state: "Insufficient data: [what's missing]"
+- If a time period has no negative reviews, say so positively: "No issues found — all X reviews in this period are 5-star."
+- NEVER say "Insufficient data" or "Query full dataset" — always give the best answer possible from the data provided, and note the sample size
 
 REQUIRED FORMAT:
 - Always include: total review count, specific counts, percentages
@@ -783,7 +784,8 @@ Instructions:
 - Lead with: "[Clinic]: X of Y reviews (Z%) [finding]"
 - Use bullet points for multiple data points
 - If targeting specific clinics (${clinics.length ? clinics.join(", ") : "all clinics"}), provide numbers for each
-- If insufficient data: "Insufficient data: [what's missing]"
+- If a period has no problems, say "No issues — X reviews, all positive" rather than claiming insufficient data
+- Always give a concrete answer; never suggest querying more data
 
 FORMAT REQUIREMENTS:
 - Always include: total count, specific counts, percentages

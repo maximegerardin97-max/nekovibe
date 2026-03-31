@@ -117,21 +117,10 @@ window.replaceMessageInStream = replaceMessageInStream;
 function renderBubbleContent(bubble, message) {
   bubble.innerHTML = "";
 
-  if (message.role === "assistant" && message.prompt && !message.isTemporary) {
+  if (message.role === "assistant" && !message.isTemporary) {
     const contentDiv = document.createElement("div");
     contentDiv.textContent = message.content;
     bubble.appendChild(contentDiv);
-
-    const buttonContainer = document.createElement("div");
-    buttonContainer.className = "button-container";
-
-    const datasetButton = document.createElement("button");
-    datasetButton.className = "query-full-dataset-btn";
-    datasetButton.innerText = "Query full dataset";
-    datasetButton.onclick = () => queryFullDataset(message.prompt, message.sources, bubble, message.filters);
-    buttonContainer.appendChild(datasetButton);
-
-    bubble.appendChild(buttonContainer);
     return;
   }
 
@@ -453,7 +442,12 @@ async function loadAllSourceReviews() {
       end.setDate(end.getDate() + 1);
       q = q.lt("published_at", end.toISOString().split("T")[0]);
     }
-    if (reviewsState.filters.comment) q = q.ilike("text", `%${reviewsState.filters.comment}%`);
+    if (reviewsState.filters.comment) {
+      q = q.ilike("text", `%${reviewsState.filters.comment}%`);
+    } else if (reviewsState.activeTopicKeywords.length > 0) {
+      const orCond = reviewsState.activeTopicKeywords.map((kw) => `text.ilike.%${kw}%`).join(",");
+      q = q.or(orCond);
+    }
     return q.order("published_at", { ascending: false }).range(0, reviewsState.pageSize - 1);
   };
 
