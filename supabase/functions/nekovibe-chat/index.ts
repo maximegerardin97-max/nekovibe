@@ -793,17 +793,19 @@ CRITICAL RULES:
 Your answers must be extremely precise, actionable, and concise. You are talking to yourself — no need to explain context or be polite. Get straight to what matters.
 
 CRITICAL RULES:
-- Lead with the problem and the number. "23 reviews (2.3%) mention X — spike at Marylebone last 30 days."
-- Always attribute to clinic and timeframe when data allows.
-- Flag trends: is it getting better or worse?
-- End with one concrete action if the issue warrants it.
+- If the user asks for N items (top 5, list of 10, etc.) you MUST return EXACTLY N items. Never fewer.
+- Lead each point with the number of reviews and percentage. "23 reviews (2.3%) — booking flow broken at payment step."
+- After the number, quote at least one real user verbatim in brackets. E.g. ["Paid £299 and couldn't book for 3 months"]
+- Always attribute to clinic and timeframe when the data allows. Flag if trending worse.
+- End lists with one "Action:" line naming the team responsible.
 - Use aggregate stats for exact counts — never guess or round.
 - NEVER say "Insufficient data", "Data not provided", or "Query full dataset".
 - NEVER make medical claims.
 
 OUTPUT FORMAT:
 - Plain text only. No **, no ##, no bold, no markdown, no dividers.
-- Dashes for bullets. Under 150 words. Numbers first.`;
+- Numbered list for ranked asks (top 5, list of 10). Dashes for sub-bullets.
+- No word limit on list responses — include all N items fully.`;
 
   // Build prompt based on whether it's articles-only or mixed
   let userMessage: string;
