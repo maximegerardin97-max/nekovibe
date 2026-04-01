@@ -852,17 +852,17 @@ HOW YOU THINK:
 - When you prioritise, you explain WHY that one is more urgent than the next.
 
 HOW YOU WRITE:
+- Match the format to the question. If asked "are users happy?" answer in 2-3 sentences. If asked for a list of N things, return exactly N numbered items. Never default to a list when the question is a yes/no or open question.
 - Short, direct sentences. No corporate language. No softening.
-- Each issue: what it is, how many people said it, one sharp quote, who fixes it, and what the fix looks like in one sentence.
-- For lists: EXACTLY N items as requested. Never fewer. If major issues run out, go deeper into sub-issues, clinic-specific patterns, emerging signals.
-- Plain text only. No **, no ##, no markdown. Numbers first. Numbered lists for ranked requests.
-- No word limit on list responses.
+- When giving a list: exactly N items as requested. Never fewer. If major issues run out, go deeper into sub-issues, clinic-specific patterns, emerging signals.
+- Plain text only. No **, no ##, no markdown, no bold. Numbers first.
 
 HARD RULES:
 - Use exact counts from the review data given. Never round to 5/10/15/20/30.
 - NEVER say "insufficient data", "data not provided", or "query full dataset".
 - NEVER make medical claims.
-- Quotes must be verbatim from the actual reviews provided.`;
+- Quotes must be verbatim from the actual reviews provided.
+- Answer the actual question. If asked "are users happy?", say yes or no with a number. Do not deflect into a list of topics.`;
 
   // Build prompt based on whether it's articles-only or mixed
   let userMessage: string;
@@ -888,21 +888,22 @@ IMPORTANT INSTRUCTIONS:
 - Be specific, quantitative, and cite sources when relevant
 - If the insights don't contain information relevant to this specific question, say so explicitly`;
   } else {
-    // Detect if the user asked for a specific number of items
-    const listMatch = prompt.match(/\b(\d+)\b/);
-    const requestedN = listMatch ? parseInt(listMatch[1]) : null;
+    const listMatch = prompt.match(/\b(top\s+)?(\d+)\b/i);
+    const requestedN = listMatch ? parseInt(listMatch[2]) : null;
     const listInstruction = requestedN
-      ? `\nREQUIRED: You must output EXACTLY ${requestedN} numbered items. Count them as you write: 1, 2, 3 ... ${requestedN}. Do not stop before item ${requestedN}. If you run out of major themes, go deeper: sub-issues, single-mention complaints, emerging signals, clinic-specific patterns. Never stop early.\n`
-      : "";
+      ? `The user asked for exactly ${requestedN} items. Return a numbered list of exactly ${requestedN}. Never stop early. If major themes run out, go deeper: sub-issues, clinic-specific patterns, single-mention complaints, emerging signals.`
+      : `Answer the question directly in the format that fits it. If it is a yes/no question, answer yes or no with supporting numbers in 2-3 sentences. If it asks for themes or issues without a count, use a short bullet list. Only use a numbered list if the user explicitly asked for one.`;
 
     const snippetCount = searchResults.length;
 
     userMessage = `Question: "${prompt}"
+
 ${listInstruction}
+
 Exact aggregate stats (accurate full-dataset counts — use for totals):
 ${aggregateStats || "Not available."}
 
-You have ${snippetCount} real customer reviews below. READ ALL OF THEM. Group them by theme. Count how many reviews mention each theme. Use exact quotes from the text.
+You have ${snippetCount} real customer reviews below. Read all of them. Use exact quotes. Count how many mention each theme.
 
 Reviews:
 ${snippetsBlock || "None."}
@@ -911,9 +912,8 @@ Summaries (background context only):
 ${summariesBlock || "None."}
 
 Rules:
-- Plain text only. No **, no ##, no bold, no markdown. Dashes for sub-bullets.
-- Each item: "N. [count] reviews ([X]%) — [theme]. ["exact quote"]"
-- Use actual counts from the reviews above, not estimates.
+- Plain text only. No **, no ##, no bold, no markdown.
+- Use actual counts from the reviews, not estimates.
 - ONLY print the star distribution if explicitly asked for it.`;
   }
 
