@@ -21,12 +21,26 @@ type ReviewFilters = {
   dateTo?: string;
 };
 
+const CLINIC_GROUPS: Record<string, string[]> = {
+  "London":  ["Neko Health Marylebone", "Neko Health Spitalfields", "Neko Health Covent Garden", "Neko Health Victoria"],
+  "UK":      ["Neko Health Manchester", "Neko Health Birmingham"],
+  "Sweden":  ["Neko Health Östermalm"],
+};
+
+function resolveClinicValue(value: string): string[] {
+  if (value.startsWith("group:")) {
+    const group = value.slice(6);
+    return CLINIC_GROUPS[group] ?? [];
+  }
+  return [value];
+}
+
 function normalizeFilters(filters: ReviewFilters | null | undefined) {
   const rawClinic = filters?.clinic;
   const clinicList = Array.isArray(rawClinic) ? rawClinic : rawClinic ? [rawClinic] : [];
   const clinic = clinicList
     .filter((value) => typeof value === "string" && value.trim())
-    .map((value) => value.trim());
+    .flatMap((value) => resolveClinicValue(value.trim()));
   const dateFrom = typeof filters?.dateFrom === "string" ? filters.dateFrom : "";
   const dateTo = typeof filters?.dateTo === "string" ? filters.dateTo : "";
   return { clinic, dateFrom, dateTo };

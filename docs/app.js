@@ -266,6 +266,7 @@ function buildClinicOptions(allClinics) {
     const groupClinics = names.filter(n => allClinics.includes(n));
     if (!groupClinics.length) continue;
     html += `<optgroup label="${group}">`;
+    html += `<option value="group:${group}">— All ${group} —</option>`;
     html += groupClinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
     html += `</optgroup>`;
   }
@@ -274,6 +275,25 @@ function buildClinicOptions(allClinics) {
     html += `<optgroup label="Other">` + ungrouped.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("") + `</optgroup>`;
   }
   return html;
+}
+
+// Resolves a clinic filter value to an array of clinic names.
+// "" → [] (all), "group:London" → [...London clinics], "Neko Health X" → ["Neko Health X"]
+function resolveClinicFilter(value) {
+  if (!value) return [];
+  if (value.startsWith("group:")) {
+    const group = value.slice(6);
+    return CLINIC_GROUPS[group] || [];
+  }
+  return [value];
+}
+
+// Applies a clinic filter to a Supabase query (handles single or multi-clinic)
+function applyClinicFilter(query, clinicValue) {
+  const clinics = resolveClinicFilter(clinicValue);
+  if (clinics.length === 0) return query;
+  if (clinics.length === 1) return query.eq("clinic_name", clinics[0]);
+  return query.in("clinic_name", clinics);
 }
 
 async function loadClinics() {
@@ -410,7 +430,7 @@ async function loadReviewsFromTable(tableName, sourceLabel) {
   let query = supabaseClient.from(tableName)
     .select("published_at, rating, text, clinic_name", { count: "exact" });
 
-  if (reviewsState.filters.clinic) query = query.eq("clinic_name", reviewsState.filters.clinic);
+  query = applyClinicFilter(query, reviewsState.filters.clinic);
   if (reviewsState.filters.rating) query = query.eq("rating", parseInt(reviewsState.filters.rating));
   if (reviewsState.filters.dateFrom) query = query.gte("published_at", reviewsState.filters.dateFrom);
   if (reviewsState.filters.dateTo) {
@@ -443,7 +463,7 @@ async function loadAllSourceReviews() {
   const buildQuery = (tableName) => {
     let q = supabaseClient.from(tableName)
       .select("published_at, rating, text, clinic_name", { count: "exact" });
-    if (reviewsState.filters.clinic) q = q.eq("clinic_name", reviewsState.filters.clinic);
+    q = applyClinicFilter(q, reviewsState.filters.clinic);
     if (reviewsState.filters.rating) q = q.eq("rating", parseInt(reviewsState.filters.rating));
     if (reviewsState.filters.dateFrom) q = q.gte("published_at", reviewsState.filters.dateFrom);
     if (reviewsState.filters.dateTo) {
@@ -646,7 +666,7 @@ async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "") {
       let q = supabaseClient.from(table)
         .select("published_at, rating, clinic_name")
         .order("published_at", { ascending: true });
-      if (clinicFilter) q = q.eq("clinic_name", clinicFilter);
+      q = applyClinicFilter(q, clinicFilter);
       return q;
     };
 
