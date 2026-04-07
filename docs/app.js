@@ -278,11 +278,12 @@ function buildClinicOptions(allClinics) {
 }
 
 // Resolves a clinic filter value to an array of clinic names.
-// "" → [] (all), "group:London" → [...London clinics], "Neko Health X" → ["Neko Health X"]
+// "" → [] (all), "group:London" → [...London clinics], "group:UK" → all UK incl. London
 function resolveClinicFilter(value) {
   if (!value) return [];
   if (value.startsWith("group:")) {
     const group = value.slice(6);
+    if (group === "UK") return [...CLINIC_GROUPS["London"], ...CLINIC_GROUPS["UK"]];
     return CLINIC_GROUPS[group] || [];
   }
   return [value];

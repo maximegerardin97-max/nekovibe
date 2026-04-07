@@ -30,6 +30,7 @@ const CLINIC_GROUPS: Record<string, string[]> = {
 function resolveClinicValue(value: string): string[] {
   if (value.startsWith("group:")) {
     const group = value.slice(6);
+    if (group === "UK") return [...(CLINIC_GROUPS["London"] ?? []), ...(CLINIC_GROUPS["UK"] ?? [])];
     return CLINIC_GROUPS[group] ?? [];
   }
   return [value];
