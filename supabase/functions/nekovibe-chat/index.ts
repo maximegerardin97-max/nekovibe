@@ -113,6 +113,9 @@ serve(async (req) => {
       dateFrom: normalizedFilters.dateFrom || intent.dateFrom || "",
       dateTo: normalizedFilters.dateTo || intent.dateTo || "",
       ratingMax: intent.ratingMax ?? null,
+      dateFrom2: intent.dateFrom2 || null,
+      dateTo2: intent.dateTo2 || null,
+      isComparison: intent.questionType === "comparison" && Boolean(intent.dateFrom2),
     };
     const hasDateFilter = Boolean(mergedFilters.dateFrom || mergedFilters.dateTo);
 
@@ -202,52 +205,53 @@ async function fetchAggregateStats(
   supabase: any,
   sourceType: string | null,
   clinics: string[],
-  filters: { dateFrom?: string; dateTo?: string; ratingMax?: number | null },
+  filters: { dateFrom?: string; dateTo?: string; ratingMax?: number | null; dateFrom2?: string | null; dateTo2?: string | null; isComparison?: boolean },
 ): Promise<string> {
   const tables: { name: string; label: string }[] = [];
   if (!sourceType || sourceType === "google_review")     tables.push({ name: "google_reviews",    label: "Google" });
   if (!sourceType || sourceType === "trustpilot_review") tables.push({ name: "trustpilot_reviews", label: "Trustpilot" });
 
-  const lines: string[] = [];
-
-  for (const table of tables) {
-    try {
-      const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-      let total = 0;
-
-      // One count query per star level — avoids row-limit issues entirely
-      for (let star = 1; star <= 5; star++) {
-        let q = supabase
-          .from(table.name)
-          .select("*", { count: "exact", head: true })
-          .eq("rating", star);
-        if (clinics.length > 0) q = q.in("clinic_name", clinics);
-        q = applyDateRange(q, "published_at", filters.dateFrom, filters.dateTo);
-        if (filters.ratingMax && star > filters.ratingMax) { dist[star] = 0; continue; }
-        const { count, error } = await q;
-        if (error) { console.error(`${table.name} star=${star} error:`, error.message); continue; }
-        dist[star] = count ?? 0;
-        total += dist[star];
+  const fetchPeriodStats = async (dateFrom?: string | null, dateTo?: string | null) => {
+    const lines: string[] = [];
+    for (const table of tables) {
+      try {
+        const dist: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        let total = 0;
+        for (let star = 1; star <= 5; star++) {
+          let q = supabase.from(table.name).select("*", { count: "exact", head: true }).eq("rating", star);
+          if (clinics.length > 0) q = q.in("clinic_name", clinics);
+          q = applyDateRange(q, "published_at", dateFrom ?? undefined, dateTo ?? undefined);
+          if (filters.ratingMax && star > filters.ratingMax) { dist[star] = 0; continue; }
+          const { count, error } = await q;
+          if (error) { console.error(`${table.name} star=${star}:`, error.message); continue; }
+          dist[star] = count ?? 0;
+          total += dist[star];
+        }
+        if (total === 0) { lines.push(`${table.label}: 0 reviews`); continue; }
+        const avg = ((1*dist[1] + 2*dist[2] + 3*dist[3] + 4*dist[4] + 5*dist[5]) / total).toFixed(2);
+        lines.push(`${table.label}: ${total} reviews, avg ${avg}/5`);
+        for (let s = 5; s >= 1; s--) {
+          lines.push(`  ${s} stars: ${dist[s]} (${((dist[s]/total)*100).toFixed(1)}%)`);
+        }
+      } catch (e: any) {
+        lines.push(`${table.label}: error — ${e.message}`);
       }
-
-      if (total === 0) { lines.push(`${table.label}: 0 reviews`); continue; }
-
-      const avg = (
-        (1*dist[1] + 2*dist[2] + 3*dist[3] + 4*dist[4] + 5*dist[5]) / total
-      ).toFixed(2);
-
-      lines.push(`${table.label}: ${total} reviews, avg ${avg}/5`);
-      for (let s = 5; s >= 1; s--) {
-        const pct = ((dist[s] / total) * 100).toFixed(1);
-        lines.push(`  ${s} stars: ${dist[s]} (${pct}%)`);
-      }
-    } catch (e: any) {
-      console.error(`fetchAggregateStats exception ${table.name}:`, e);
-      lines.push(`${table.label}: error — ${e.message}`);
     }
+    return lines.join("\n");
+  };
+
+  if (filters.isComparison && filters.dateFrom2) {
+    const [p1, p2] = await Promise.all([
+      fetchPeriodStats(filters.dateFrom, filters.dateTo),
+      fetchPeriodStats(filters.dateFrom2, filters.dateTo2),
+    ]);
+    const label1 = `${filters.dateFrom || "start"} → ${filters.dateTo || "today"}`;
+    const label2 = `${filters.dateFrom2} → ${filters.dateTo2 || "today"}`;
+    return `Period 1 (${label1}):\n${p1}\n\nPeriod 2 (${label2}):\n${p2}`;
   }
 
-  return lines.length > 0 ? lines.join("\n") : "No aggregate data available.";
+  const stats = await fetchPeriodStats(filters.dateFrom, filters.dateTo);
+  return stats || "No aggregate data available.";
 }
 
 async function fetchSummaries(
@@ -890,7 +894,10 @@ IMPORTANT INSTRUCTIONS:
   } else {
     const listMatch = prompt.match(/\b(top\s+)?(\d+)\b/i);
     const requestedN = listMatch ? parseInt(listMatch[2]) : null;
-    const listInstruction = requestedN
+    const isComparison = (aggregateStats || "").includes("Period 1") && (aggregateStats || "").includes("Period 2");
+    const listInstruction = isComparison
+      ? `This is a comparison question. The aggregate stats contain Period 1 and Period 2 data. Lead with: which period was better, by how much (avg rating delta, volume delta), then what changed — what got better, what got worse. Keep it under 200 words.`
+      : requestedN
       ? `The user asked for exactly ${requestedN} items. Return a numbered list of exactly ${requestedN}. Never stop early. If major themes run out, go deeper: sub-issues, clinic-specific patterns, single-mention complaints, emerging signals.`
       : `Answer the question directly in the format that fits it. If it is a yes/no question, answer yes or no with supporting numbers in 2-3 sentences. If it asks for themes or issues without a count, use a short bullet list. Only use a numbered list if the user explicitly asked for one.`;
 
@@ -989,6 +996,8 @@ interface Intent {
   questionType: string;
   source: string | null;
   ratingMax: number | null;
+  dateFrom2?: string | null;
+  dateTo2?: string | null;
 }
 
 async function extractIntent(prompt: string, today: string): Promise<Intent> {
@@ -1027,6 +1036,8 @@ Extract structured search intent from this question. Return ONLY valid JSON:
   "country": null,
   "dateFrom": null,
   "dateTo": null,
+  "dateFrom2": null,
+  "dateTo2": null,
   "topicKeywords": [],
   "questionType": "general",
   "source": null,
@@ -1036,9 +1047,10 @@ Extract structured search intent from this question. Return ONLY valid JSON:
 Rules:
 - "clinics": full names like ["Neko Health Manchester"] — only if explicitly mentioned
 - "country": "UK", "SE", or null
-- "dateFrom"/"dateTo": ISO dates (YYYY-MM-DD) if time period implied (e.g. "last month", "this week", "Q1") — compute from today
+- "dateFrom"/"dateTo": ISO dates (YYYY-MM-DD) for the primary period — compute from today (e.g. "last month", "Q1 2025", "2024")
+- "dateFrom2"/"dateTo2": ISO dates for the SECOND period — only set when questionType is "comparison" and two distinct periods are mentioned (e.g. "compare 2025 to 2026" → dateFrom="2025-01-01", dateTo="2025-12-31", dateFrom2="2026-01-01", dateTo2=today). Leave null otherwise.
 - "topicKeywords": 3-8 lowercase search terms that directly relate to the question topic
-- "questionType": one of "complaint", "praise", "trend", "comparison", "general"
+- "questionType": one of "complaint", "praise", "trend", "comparison", "general" — use "comparison" when two time periods, clinics, or sources are being compared
 - "source": "trustpilot_review" if question mentions Trustpilot, "google_review" if mentions Google reviews, otherwise null
 - "ratingMax": integer 1-4 if question asks about bad/negative/low/poor reviews or complaints (use 3 for "bad reviews"), null otherwise
 
@@ -1065,6 +1077,8 @@ Question: "${prompt.replace(/"/g, "'")}"`
       questionType: typeof parsed.questionType === "string" ? parsed.questionType : "general",
       source: typeof parsed.source === "string" ? parsed.source : null,
       ratingMax: typeof parsed.ratingMax === "number" ? parsed.ratingMax : null,
+      dateFrom2: typeof parsed.dateFrom2 === "string" ? parsed.dateFrom2 : null,
+      dateTo2: typeof parsed.dateTo2 === "string" ? parsed.dateTo2 : null,
     };
   } catch {
     return fallback;

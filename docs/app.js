@@ -252,16 +252,29 @@ const reviewsState = {
   activeTopicKeywords: [],
 };
 
-// Known clinics — ensures they always appear in dropdowns even with 0 reviews
-const KNOWN_CLINICS = [
-  "Neko Health Marylebone",
-  "Neko Health Spitalfields",
-  "Neko Health Covent Garden",
-  "Neko Health Manchester",
-  "Neko Health Birmingham",
-  "Neko Health Victoria",
-  "Neko Health Östermalm",
-];
+// Clinic groups — used for grouped dropdowns
+const CLINIC_GROUPS = {
+  "London":  ["Neko Health Marylebone", "Neko Health Spitalfields", "Neko Health Covent Garden", "Neko Health Victoria"],
+  "UK":      ["Neko Health Manchester", "Neko Health Birmingham"],
+  "Sweden":  ["Neko Health Östermalm"],
+};
+const KNOWN_CLINICS = Object.values(CLINIC_GROUPS).flat();
+
+function buildClinicOptions(allClinics) {
+  let html = '<option value="">All Clinics</option>';
+  for (const [group, names] of Object.entries(CLINIC_GROUPS)) {
+    const groupClinics = names.filter(n => allClinics.includes(n));
+    if (!groupClinics.length) continue;
+    html += `<optgroup label="${group}">`;
+    html += groupClinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    html += `</optgroup>`;
+  }
+  const ungrouped = allClinics.filter(n => !KNOWN_CLINICS.includes(n));
+  if (ungrouped.length) {
+    html += `<optgroup label="Other">` + ungrouped.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("") + `</optgroup>`;
+  }
+  return html;
+}
 
 async function loadClinics() {
   if (!supabaseClient) {
@@ -279,18 +292,14 @@ async function loadClinics() {
       ...(gRes.status === "fulfilled" ? (gRes.value.data || []) : []),
       ...(tRes.status === "fulfilled" ? (tRes.value.data || []) : []),
     ].map((r) => r.clinic_name).filter(Boolean);
-    const uniqueClinics = [...new Set([...KNOWN_CLINICS, ...fromDB])].sort();
+    const uniqueClinics = [...new Set([...KNOWN_CLINICS, ...fromDB])];
+    const optionsHtml = buildClinicOptions(uniqueClinics);
     [
       document.getElementById("filter-clinic"),
       document.getElementById("reviews-chat-clinic-filter"),
     ].forEach((sel) => {
       if (!sel) return;
-      sel.innerHTML = '<option value="">All Clinics</option>';
-      uniqueClinics.forEach((c) => {
-        const opt = document.createElement("option");
-        opt.value = c; opt.textContent = c;
-        sel.appendChild(opt);
-      });
+      sel.innerHTML = optionsHtml;
     });
   } catch (error) {
     console.error("Error loading clinics:", error);
@@ -695,8 +704,7 @@ async function setupRatingsGraph() {
 
   if (clinicFilter) {
     const clinics = await loadClinicsForFilter();
-    clinicFilter.innerHTML = '<option value="">All Clinics</option>' +
-      clinics.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join("");
+    clinicFilter.innerHTML = buildClinicOptions(clinics);
     clinicFilter.addEventListener("change", refresh);
   }
 
@@ -747,6 +755,7 @@ async function updateRatingsGraph(clinicFilter = "", sourceFilter = "") {
 
   const periods = Array.from(periodMap.keys()).sort();
   const avgRatings = periods.map(k => (periodMap.get(k).total / periodMap.get(k).count).toFixed(2));
+  const countData = periods.map(k => periodMap.get(k).count);
   const labels = periods.map(k => formatPeriodLabel(k, graphPeriod));
 
   const ctx = document.getElementById("ratings-chart").getContext("2d");
@@ -759,6 +768,7 @@ async function updateRatingsGraph(clinicFilter = "", sourceFilter = "") {
       datasets: [{
         label: "Average Rating",
         data: avgRatings,
+        countData,
         borderColor: "rgb(111, 143, 195)",
         backgroundColor: "rgba(111, 143, 195, 0.1)",
         tension: 0.4,
@@ -772,7 +782,10 @@ async function updateRatingsGraph(clinicFilter = "", sourceFilter = "") {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: true, position: "top" },
-        tooltip: { callbacks: { label: (ctx) => `Rating: ${ctx.parsed.y} / 5.0` } },
+        tooltip: { callbacks: { label: (ctx) => {
+          const count = ctx.dataset.countData?.[ctx.dataIndex];
+          return `Rating: ${ctx.parsed.y} / 5.0${count != null ? `  (${count} review${count !== 1 ? "s" : ""})` : ""}`;
+        } } },
       },
       scales: {
         y: {
