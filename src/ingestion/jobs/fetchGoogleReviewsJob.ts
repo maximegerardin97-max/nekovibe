@@ -75,7 +75,13 @@ export class FetchGoogleReviewsJob implements IngestionJob {
 
     for (const placeIdOrUrl of allEntries) {
       console.log(`\nFetching reviews for: ${placeIdOrUrl.substring(0, 60)}...`);
-      const clinicResult = await this.fetchReviewsForClinic(placeIdOrUrl);
+      // Find canonical name from config so we don't use Google's display name
+      const configClinic = NEKO_CLINICS.find(c =>
+        placeIdOrUrl === c.placeId ||
+        placeIdOrUrl === c.googleMapsUrl ||
+        placeIdOrUrl === `search:${c.searchQuery}`
+      );
+      const clinicResult = await this.fetchReviewsForClinic(placeIdOrUrl, configClinic?.name);
 
       result.added += clinicResult.added;
       result.skipped += clinicResult.skipped;
@@ -90,7 +96,7 @@ export class FetchGoogleReviewsJob implements IngestionJob {
     return result;
   }
 
-  private async fetchReviewsForClinic(placeIdOrUrl: string): Promise<IngestionResult> {
+  private async fetchReviewsForClinic(placeIdOrUrl: string, canonicalName?: string): Promise<IngestionResult> {
     const result: IngestionResult = {
       added: 0,
       skipped: 0,
@@ -108,6 +114,8 @@ export class FetchGoogleReviewsJob implements IngestionJob {
         return result;
       }
 
+      // Use canonical config name if available, fall back to Google's display name
+      if (canonicalName) placeInfo.clinicName = canonicalName;
       console.log(`  Using Place ID: ${placeInfo.placeId}`);
       console.log(`  Clinic Name: ${placeInfo.clinicName}`);
 
