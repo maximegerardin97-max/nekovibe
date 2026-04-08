@@ -87,7 +87,8 @@ export class FetchZendeskJob {
 
   private readonly subdomain: string;
   private readonly authHeader: string;
-  private readonly supabase: ReturnType<typeof createClient>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private readonly supabase: any;
   private groupCache: Map<number, string> = new Map();
 
   constructor() {
@@ -146,13 +147,13 @@ export class FetchZendeskJob {
     let url: string | null = `${this.baseUrl}/tickets.json?sort_by=created_at&sort_order=desc&per_page=100`;
 
     while (url) {
-      const data = await this.zendeskFetch<ZendeskTicketsResponse>(url);
+      const data: ZendeskTicketsResponse = await this.zendeskFetch<ZendeskTicketsResponse>(url);
       console.log(`  Fetched ${data.tickets.length} tickets (total: ${data.count})`);
 
       for (const ticket of data.tickets) {
         try {
           const customField = (id: number) =>
-            ticket.custom_fields?.find((f) => f.id === id)?.value ?? null;
+            ticket.custom_fields?.find((f: { id: number; value: string | null }) => f.id === id)?.value ?? null;
 
           const groupName = ticket.group_id ? this.groupCache.get(ticket.group_id) ?? null : null;
           const clinicName = inferClinicName([groupName, ticket.subject].filter(Boolean).join(' '));
@@ -202,7 +203,7 @@ export class FetchZendeskJob {
     let url: string | null = `${this.baseUrl}/satisfaction_ratings.json?per_page=100&sort_order=desc`;
 
     while (url) {
-      const data = await this.zendeskFetch<ZendeskCSATResponse>(url);
+      const data: ZendeskCSATResponse = await this.zendeskFetch<ZendeskCSATResponse>(url);
       console.log(`  Fetched ${data.satisfaction_ratings.length} CSAT ratings`);
 
       for (const csat of data.satisfaction_ratings) {
