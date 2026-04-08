@@ -29,6 +29,7 @@ jobs:
 
       - name: Fetch latest Google reviews
         run: npx ts-node scripts/fetch-google-reviews.ts
+        continue-on-error: true
 
       - name: Fetch Trustpilot reviews
         run: npx ts-node scripts/fetch-trustpilot-reviews.ts
