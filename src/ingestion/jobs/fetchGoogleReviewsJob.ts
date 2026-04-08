@@ -243,7 +243,7 @@ export class FetchGoogleReviewsJob implements IngestionJob {
   private async fetchReviewsFromAPI(placeId: string): Promise<GooglePlacesReview[]> {
     try {
       // Use Place Details API to get reviews
-      const url = `${this.apiBaseUrl}/details/json?place_id=${placeId}&fields=reviews,name&key=${this.apiKey}`;
+      const url = `${this.apiBaseUrl}/details/json?place_id=${placeId}&fields=reviews,name&reviews_sort=newest&key=${this.apiKey}`;
       
       const response = await fetch(url);
       const data: GooglePlacesResponse = await response.json();

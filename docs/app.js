@@ -418,6 +418,8 @@ async function loadReviews() {
       await loadReviewsFromTable("trustpilot_reviews", "trustpilot");
     } else if (source === "google") {
       await loadReviewsFromTable("google_reviews", "google");
+    } else if (source === "csat") {
+      await loadCSATReviews();
     } else {
       await loadAllSourceReviews();
     }
@@ -497,6 +499,49 @@ async function loadAllSourceReviews() {
 
   updateCountAndPagination(gCount + tCount, from);
   updateReviewsTable(merged, null);
+}
+
+async function loadCSATReviews() {
+  const from = (reviewsState.currentPage - 1) * reviewsState.pageSize;
+
+  let query = supabaseClient.from("zendesk_csat")
+    .select("created_at, rating, comment, clinic_name", { count: "exact" });
+
+  applyClinicFilter(query, reviewsState.filters.clinic);
+  if (reviewsState.filters.clinic) {
+    const val = reviewsState.filters.clinic;
+    if (val.startsWith("group:")) {
+      const groups = resolveClinicFilter(val);
+      if (groups.length > 0) query = query.in("clinic_name", groups);
+    } else if (val) {
+      query = query.eq("clinic_name", val);
+    }
+  }
+  if (reviewsState.filters.rating) query = query.eq("rating", parseInt(reviewsState.filters.rating));
+  if (reviewsState.filters.dateFrom) query = query.gte("created_at", reviewsState.filters.dateFrom);
+  if (reviewsState.filters.dateTo) {
+    const end = new Date(reviewsState.filters.dateTo);
+    end.setDate(end.getDate() + 1);
+    query = query.lt("created_at", end.toISOString().split("T")[0]);
+  }
+  if (reviewsState.filters.comment) {
+    query = query.ilike("comment", `%${reviewsState.filters.comment}%`);
+  }
+  query = query.order("created_at", { ascending: false }).range(from, from + reviewsState.pageSize - 1);
+
+  const { data, count, error } = await query;
+  if (error) { updateReviewsTable([], `Error: ${error.message}`); return; }
+
+  // Map CSAT fields to the common review shape expected by updateReviewsTable
+  const rows = (data || []).map((r) => ({
+    published_at: r.created_at,
+    rating: r.rating,
+    text: r.comment || "",
+    clinic_name: r.clinic_name || "—",
+    source: "csat",
+  }));
+  updateCountAndPagination(count || 0, from);
+  updateReviewsTable(rows, null);
 }
 
 function updateCountAndPagination(total, from) {
@@ -646,8 +691,21 @@ function getMonthKey(dateStr) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function getQuarterKey(dateStr) {
+  const d = new Date(dateStr);
+  const q = Math.floor(d.getMonth() / 3) + 1;
+  return `${d.getFullYear()}-Q${q}`;
+}
+
+function getYearKey(dateStr) {
+  return String(new Date(dateStr).getFullYear());
+}
+
 function getPeriodKey(dateStr, period) {
-  return period === "monthly" ? getMonthKey(dateStr) : getWeekStartDate(dateStr);
+  if (period === "monthly")   return getMonthKey(dateStr);
+  if (period === "quarterly") return getQuarterKey(dateStr);
+  if (period === "yearly")    return getYearKey(dateStr);
+  return getWeekStartDate(dateStr);
 }
 
 function formatPeriodLabel(key, period) {
@@ -656,6 +714,8 @@ function formatPeriodLabel(key, period) {
     return new Date(parseInt(year), parseInt(month) - 1, 1)
       .toLocaleDateString("en-US", { month: "short", year: "numeric" });
   }
+  if (period === "quarterly") return key; // "2026-Q1"
+  if (period === "yearly")    return key; // "2026"
   return new Date(key + "T12:00:00")
     .toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
@@ -681,11 +741,19 @@ async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "") {
       if (error) throw error;
       return (data || []).map(r => ({ ...r, source: "trustpilot" }));
     }
+    if (sourceFilter === "csat") {
+      const { data, error } = await buildQ("zendesk_csat");
+      if (error) throw error;
+      return (data || []).map(r => ({ ...r, source: "csat" }));
+    }
     // All sources
-    const [gRes, tRes] = await Promise.allSettled([buildQ("google_reviews"), buildQ("trustpilot_reviews")]);
+    const [gRes, tRes, cRes] = await Promise.allSettled([
+      buildQ("google_reviews"), buildQ("trustpilot_reviews"), buildQ("zendesk_csat")
+    ]);
     const gData = (gRes.status === "fulfilled" ? gRes.value.data || [] : []).map(r => ({ ...r, source: "google" }));
     const tData = (tRes.status === "fulfilled" ? tRes.value.data || [] : []).map(r => ({ ...r, source: "trustpilot" }));
-    return [...gData, ...tData].sort((a, b) => new Date(a.published_at) - new Date(b.published_at));
+    const cData = (cRes.status === "fulfilled" ? cRes.value.data || [] : []).map(r => ({ ...r, source: "csat" }));
+    return [...gData, ...tData, ...cData].sort((a, b) => new Date(a.published_at) - new Date(b.published_at));
   } catch (error) {
     console.error("Error loading reviews for graph:", error);
     return [];
@@ -695,13 +763,15 @@ async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "") {
 async function loadClinicsForFilter() {
   if (!supabaseClient) return KNOWN_CLINICS;
   try {
-    const [gRes, tRes] = await Promise.allSettled([
+    const [gRes, tRes, cRes] = await Promise.allSettled([
       supabaseClient.from("google_reviews").select("clinic_name"),
       supabaseClient.from("trustpilot_reviews").select("clinic_name"),
+      supabaseClient.from("zendesk_csat").select("clinic_name"),
     ]);
     const fromDB = [
       ...(gRes.status === "fulfilled" ? (gRes.value.data || []) : []),
       ...(tRes.status === "fulfilled" ? (tRes.value.data || []) : []),
+      ...(cRes.status === "fulfilled" ? (cRes.value.data || []) : []),
     ].map((r) => r.clinic_name).filter(Boolean);
     return [...new Set([...KNOWN_CLINICS, ...fromDB])].sort();
   } catch (error) {
@@ -714,11 +784,16 @@ let graphSource = "";
 async function setupRatingsGraph() {
   const canvas = document.getElementById("ratings-chart");
   const clinicFilter = document.getElementById("graph-clinic-filter");
-  const weeklyBtn = document.getElementById("graph-period-weekly");
-  const monthlyBtn = document.getElementById("graph-period-monthly");
-  const sourceAllBtn = document.getElementById("graph-source-all");
+  const weeklyBtn    = document.getElementById("graph-period-weekly");
+  const monthlyBtn   = document.getElementById("graph-period-monthly");
+  const quarterlyBtn = document.getElementById("graph-period-quarterly");
+  const yearlyBtn    = document.getElementById("graph-period-yearly");
+  const sourceAllBtn    = document.getElementById("graph-source-all");
   const sourceGoogleBtn = document.getElementById("graph-source-google");
-  const sourceTpBtn = document.getElementById("graph-source-trustpilot");
+  const sourceTpBtn     = document.getElementById("graph-source-trustpilot");
+  const sourceCsatBtn   = document.getElementById("graph-source-csat");
+  const allPeriodBtns = [weeklyBtn, monthlyBtn, quarterlyBtn, yearlyBtn];
+  const allSourceBtns = [sourceAllBtn, sourceGoogleBtn, sourceTpBtn, sourceCsatBtn];
   if (!canvas) return;
 
   const refresh = () => updateRatingsGraph(clinicFilter?.value || "", graphSource);
@@ -729,29 +804,27 @@ async function setupRatingsGraph() {
     clinicFilter.addEventListener("change", refresh);
   }
 
-  weeklyBtn?.addEventListener("click", () => {
-    graphPeriod = "weekly";
-    weeklyBtn.classList.add("active");
-    monthlyBtn?.classList.remove("active");
-    refresh();
-  });
-
-  monthlyBtn?.addEventListener("click", () => {
-    graphPeriod = "monthly";
-    monthlyBtn.classList.add("active");
-    weeklyBtn?.classList.remove("active");
-    refresh();
-  });
-
-  const setSource = (src, activeBtn) => {
-    graphSource = src;
-    [sourceAllBtn, sourceGoogleBtn, sourceTpBtn].forEach(b => b?.classList.remove("active"));
+  const setPeriod = (period, activeBtn) => {
+    graphPeriod = period;
+    allPeriodBtns.forEach(b => b?.classList.remove("active"));
     activeBtn?.classList.add("active");
     refresh();
   };
-  sourceAllBtn?.addEventListener("click", () => setSource("", sourceAllBtn));
+  weeklyBtn?.addEventListener("click",    () => setPeriod("weekly", weeklyBtn));
+  monthlyBtn?.addEventListener("click",   () => setPeriod("monthly", monthlyBtn));
+  quarterlyBtn?.addEventListener("click", () => setPeriod("quarterly", quarterlyBtn));
+  yearlyBtn?.addEventListener("click",    () => setPeriod("yearly", yearlyBtn));
+
+  const setSource = (src, activeBtn) => {
+    graphSource = src;
+    allSourceBtns.forEach(b => b?.classList.remove("active"));
+    activeBtn?.classList.add("active");
+    refresh();
+  };
+  sourceAllBtn?.addEventListener("click",    () => setSource("", sourceAllBtn));
   sourceGoogleBtn?.addEventListener("click", () => setSource("google", sourceGoogleBtn));
-  sourceTpBtn?.addEventListener("click", () => setSource("trustpilot", sourceTpBtn));
+  sourceTpBtn?.addEventListener("click",     () => setSource("trustpilot", sourceTpBtn));
+  sourceCsatBtn?.addEventListener("click",   () => setSource("csat", sourceCsatBtn));
 
   await updateRatingsGraph("", "");
 }

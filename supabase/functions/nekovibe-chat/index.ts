@@ -222,9 +222,10 @@ async function fetchAggregateStats(
   clinics: string[],
   filters: { dateFrom?: string; dateTo?: string; ratingMax?: number | null; dateFrom2?: string | null; dateTo2?: string | null; isComparison?: boolean },
 ): Promise<string> {
-  const tables: { name: string; label: string }[] = [];
-  if (!sourceType || sourceType === "google_review")     tables.push({ name: "google_reviews",    label: "Google" });
-  if (!sourceType || sourceType === "trustpilot_review") tables.push({ name: "trustpilot_reviews", label: "Trustpilot" });
+  const tables: { name: string; label: string; dateCol: string }[] = [];
+  if (!sourceType || sourceType === "google_review")     tables.push({ name: "google_reviews",    label: "Google",    dateCol: "published_at" });
+  if (!sourceType || sourceType === "trustpilot_review") tables.push({ name: "trustpilot_reviews", label: "Trustpilot", dateCol: "published_at" });
+  if (!sourceType || sourceType === "csat")              tables.push({ name: "zendesk_csat",       label: "CSAT",      dateCol: "created_at" });
 
   const fetchPeriodStats = async (dateFrom?: string | null, dateTo?: string | null) => {
     const lines: string[] = [];
@@ -235,7 +236,7 @@ async function fetchAggregateStats(
         for (let star = 1; star <= 5; star++) {
           let q = supabase.from(table.name).select("*", { count: "exact", head: true }).eq("rating", star);
           if (clinics.length > 0) q = q.in("clinic_name", clinics);
-          q = applyDateRange(q, "published_at", dateFrom ?? undefined, dateTo ?? undefined);
+          q = applyDateRange(q, table.dateCol, dateFrom ?? undefined, dateTo ?? undefined);
           if (filters.ratingMax && star > filters.ratingMax) { dist[star] = 0; continue; }
           const { count, error } = await q;
           if (error) { console.error(`${table.name} star=${star}:`, error.message); continue; }
@@ -388,7 +389,7 @@ async function fetchRecentReviewsSample(
   filters: { clinic: string[]; dateFrom?: string; dateTo?: string; ratingMax?: number | null },
 ): Promise<any[]> {
   // For broad questions with no keywords, fetch a spread of recent reviews from all sources
-  const perTable = Math.ceil(reviewFetchLimit / 2);
+  const perTable = Math.ceil(reviewFetchLimit / 3);
   const results: any[] = [];
 
   const applyClinicAndDate = (q: any, clinicCol: string, dateCol: string) => {
@@ -425,6 +426,21 @@ async function fetchRecentReviewsSample(
       id: `trustpilot_${r.id}`, clinic_id: r.clinic_name, source_type: "trustpilot_review",
       text: truncate(r.text || r.title || "", 300), rating: r.rating, author: r.author_name,
       date: r.published_at?.split("T")[0] ?? null, table: "trustpilot_reviews",
+    })));
+  }
+
+  // CSAT comments
+  if (!sourceType || sourceType === "csat") {
+    let q = supabase.from("zendesk_csat")
+      .select("id, clinic_name, rating, comment, created_at")
+      .order("created_at", { ascending: false })
+      .limit(perTable);
+    q = applyClinicAndDate(q, "clinic_name", "created_at");
+    const { data } = await q;
+    if (data) results.push(...data.map((r: any) => ({
+      id: `csat_${r.id}`, clinic_id: r.clinic_name, source_type: "csat",
+      text: truncate(r.comment || "", 300), rating: r.rating, author: null,
+      date: r.created_at?.split("T")[0] ?? null, table: "zendesk_csat",
     })));
   }
 
@@ -473,6 +489,27 @@ async function fetchAllNegativeReviews(
 
   if (!sourceType || sourceType === "google_review") await fetchFrom("google_reviews", "google_review");
   if (!sourceType || sourceType === "trustpilot_review") await fetchFrom("trustpilot_reviews", "trustpilot_review");
+
+  // CSAT bad ratings (1 = "bad" responses)
+  if (!sourceType || sourceType === "csat") {
+    let q = supabase.from("zendesk_csat")
+      .select("id, clinic_name, rating, comment, created_at")
+      .lte("rating", 3)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    if (clinics.length > 0) q = q.in("clinic_name", clinics);
+    q = applyDateRange(q, "created_at", filters.dateFrom, filters.dateTo);
+    const { data } = await q;
+    if (data) results.push(...data.map((r: any) => ({
+      id: `csat_${r.id}`,
+      clinic_id: r.clinic_name,
+      source_type: "csat",
+      text: (r.comment || "").slice(0, 600),
+      rating: r.rating,
+      author: null,
+      date: r.created_at?.split("T")[0] ?? null,
+    })));
+  }
 
   return results.sort((a, b) => (a.rating ?? 5) - (b.rating ?? 5));
 }
@@ -625,6 +662,67 @@ async function searchFeedbackItems(
         table: "trustpilot_reviews",
       })),
     );
+  }
+
+  // Search zendesk_csat (CSAT comments)
+  if (!sourceType || sourceType === "csat") {
+    let csatQuery = supabase
+      .from("zendesk_csat")
+      .select("id, clinic_name, rating, comment, created_at")
+      .limit(maxSearchResults);
+
+    if (clinics.length > 0) csatQuery = csatQuery.in("clinic_name", clinics);
+    csatQuery = applyDateRange(csatQuery, "created_at", filters.dateFrom, filters.dateTo);
+    if (filters.ratingMax) csatQuery = csatQuery.lte("rating", filters.ratingMax);
+
+    const csatOrConditions = keywords.map((k) => `comment.ilike.%${k}%`).join(",");
+    if (csatOrConditions) csatQuery = csatQuery.or(csatOrConditions);
+    csatQuery = csatQuery.order("created_at", { ascending: false });
+
+    const { data: csatData, error: csatError } = await csatQuery;
+    if (!csatError && csatData) {
+      results.push(...csatData.map((item: any) => ({
+        id: `csat_${item.id}`,
+        clinic_id: item.clinic_name,
+        source_type: "csat",
+        text: truncate(item.comment || "", 300),
+        rating: item.rating,
+        author: null,
+        date: item.created_at ? new Date(item.created_at).toISOString().split("T")[0] : null,
+        table: "zendesk_csat",
+      })));
+    }
+  }
+
+  // Search zendesk_tickets (subject + description)
+  if (!sourceType || sourceType === "csat") {
+    let ticketsQuery = supabase
+      .from("zendesk_tickets")
+      .select("id, clinic_name, subject, description, created_at, category, contact_reason")
+      .limit(maxSearchResults);
+
+    if (clinics.length > 0) ticketsQuery = ticketsQuery.in("clinic_name", clinics);
+    ticketsQuery = applyDateRange(ticketsQuery, "created_at", filters.dateFrom, filters.dateTo);
+
+    const ticketOrConditions = keywords
+      .map((k) => `subject.ilike.%${k}%,description.ilike.%${k}%`)
+      .join(",");
+    if (ticketOrConditions) ticketsQuery = ticketsQuery.or(ticketOrConditions);
+    ticketsQuery = ticketsQuery.order("created_at", { ascending: false });
+
+    const { data: ticketData, error: ticketError } = await ticketsQuery;
+    if (!ticketError && ticketData) {
+      results.push(...ticketData.map((item: any) => ({
+        id: `ticket_${item.id}`,
+        clinic_id: item.clinic_name,
+        source_type: "zendesk_ticket",
+        text: truncate(`${item.subject || ""} — ${item.description || ""}`, 300),
+        rating: null,
+        author: null,
+        date: item.created_at ? new Date(item.created_at).toISOString().split("T")[0] : null,
+        table: "zendesk_tickets",
+      })));
+    }
   }
 
   // Also search articles table
@@ -1066,7 +1164,7 @@ Rules:
 - "dateFrom2"/"dateTo2": ISO dates for the SECOND period — only set when questionType is "comparison" and two distinct periods are mentioned (e.g. "compare 2025 to 2026" → dateFrom="2025-01-01", dateTo="2025-12-31", dateFrom2="2026-01-01", dateTo2=today). Leave null otherwise.
 - "topicKeywords": 3-8 lowercase search terms that directly relate to the question topic
 - "questionType": one of "complaint", "praise", "trend", "comparison", "general" — use "comparison" when two time periods, clinics, or sources are being compared
-- "source": "trustpilot_review" if question mentions Trustpilot, "google_review" if mentions Google reviews, otherwise null
+- "source": "trustpilot_review" if question mentions Trustpilot, "google_review" if mentions Google reviews, "csat" if mentions CSAT/Zendesk/satisfaction ratings, otherwise null
 - "ratingMax": integer 1-4 if question asks about bad/negative/low/poor reviews or complaints (use 3 for "bad reviews"), null otherwise
 
 Question: "${prompt.replace(/"/g, "'")}"`
@@ -1119,6 +1217,7 @@ function detectSourceType(prompt: string, sources: string[]): string | null {
 
   if (hasTrustpilot) return "trustpilot_review";
   if (hasGoogle) return "google_review";
+  if (lowered.includes("csat") || lowered.includes("zendesk") || lowered.includes("satisfaction rating")) return "csat";
   if (lowered.includes("article") || lowered.includes("press") || sources.includes("articles")) return "press_article";
   if (lowered.includes("social") || lowered.includes("post")) return "social_post";
   if (lowered.includes("blog")) return "blog_post";

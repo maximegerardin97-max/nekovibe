@@ -43,6 +43,14 @@ jobs:
       - name: Generate/refresh summaries
         run: npx ts-node scripts/generate-summaries.ts
 
+      - name: Fetch Zendesk tickets and CSAT
+        run: npx ts-node scripts/fetch-zendesk.ts
+        continue-on-error: true
+        env:
+          ZENDESK_SUBDOMAIN: ${{ secrets.ZENDESK_SUBDOMAIN }}
+          ZENDESK_EMAIL: ${{ secrets.ZENDESK_EMAIL }}
+          ZENDESK_API_TOKEN: ${{ secrets.ZENDESK_API_TOKEN }}
+
       - name: Generate/refresh review topics
         run: npx ts-node scripts/generate-topics.ts
         continue-on-error: true
