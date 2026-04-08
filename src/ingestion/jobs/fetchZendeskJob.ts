@@ -38,10 +38,18 @@ interface ZendeskTicket {
   created_at: string;
   updated_at: string;
   custom_fields: Array<{ id: number; value: string | null }>;
-  // satisfaction may be null if not yet rated
   satisfaction_rating?: { score: string } | null;
 }
 
+// Incremental export response (cursor-based, no 10k limit)
+interface ZendeskIncrementalTicketsResponse {
+  tickets: ZendeskTicket[];
+  next_page: string | null;
+  end_time: number;
+  count: number;
+}
+
+// Kept for reference (offset-based, used for CSAT)
 interface ZendeskTicketsResponse {
   tickets: ZendeskTicket[];
   next_page: string | null;
@@ -144,11 +152,16 @@ export class FetchZendeskJob {
   // ─── Tickets ────────────────────────────────────────────────────────────────
   private async fetchAllTickets(): Promise<{ added: number; skipped: number; errors: number }> {
     let added = 0, skipped = 0, errors = 0;
-    let url: string | null = `${this.baseUrl}/tickets.json?sort_by=created_at&sort_order=desc&per_page=100`;
+
+    // Use incremental export — no offset-pagination 10k limit.
+    // Default: last 90 days. Set ZENDESK_DAYS_BACK=365 for a deeper historical load.
+    const daysBack = parseInt(process.env.ZENDESK_DAYS_BACK ?? '90', 10);
+    const startTime = Math.floor(Date.now() / 1000) - daysBack * 24 * 60 * 60;
+    let url: string | null = `${this.baseUrl}/incremental/tickets.json?start_time=${startTime}&per_page=1000`;
 
     while (url) {
-      const data: ZendeskTicketsResponse = await this.zendeskFetch<ZendeskTicketsResponse>(url);
-      console.log(`  Fetched ${data.tickets.length} tickets (total: ${data.count})`);
+      const data: ZendeskIncrementalTicketsResponse = await this.zendeskFetch<ZendeskIncrementalTicketsResponse>(url);
+      console.log(`  Fetched ${data.tickets.length} tickets (end_time: ${data.end_time})`);
 
       for (const ticket of data.tickets) {
         try {
@@ -189,9 +202,9 @@ export class FetchZendeskJob {
         }
       }
 
-      url = data.next_page;
-      // Respect Zendesk rate limits
-      if (url) await new Promise((r) => setTimeout(r, 300));
+      // Incremental export is complete when fewer than 1000 results returned
+      url = data.count >= 1000 ? data.next_page : null;
+      if (url) await new Promise((r) => setTimeout(r, 200));
     }
 
     return { added, skipped, errors };
@@ -200,7 +213,10 @@ export class FetchZendeskJob {
   // ─── CSAT ───────────────────────────────────────────────────────────────────
   private async fetchAllCSAT(): Promise<{ added: number; skipped: number; errors: number }> {
     let added = 0, skipped = 0, errors = 0;
-    let url: string | null = `${this.baseUrl}/satisfaction_ratings.json?per_page=100&sort_order=desc`;
+    const daysBack = parseInt(process.env.ZENDESK_DAYS_BACK ?? '90', 10);
+    const startDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000)
+      .toISOString().split('T')[0]; // YYYY-MM-DD
+    let url: string | null = `${this.baseUrl}/satisfaction_ratings.json?per_page=100&sort_order=desc&start_date=${startDate}`;
 
     while (url) {
       const data: ZendeskCSATResponse = await this.zendeskFetch<ZendeskCSATResponse>(url);
