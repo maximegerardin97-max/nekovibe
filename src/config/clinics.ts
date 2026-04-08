@@ -63,6 +63,6 @@ export const NEKO_CLINICS: ClinicConfig[] = [
     name: "Neko Health Östermalm",
     country: "SE",
     city: "Stockholm",
-    searchQuery: "Neko Health Östermalm Stockholm",
+    searchQuery: "Neko Health Östermalmstorg Stockholm",
   },
 ];
