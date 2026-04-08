@@ -24,10 +24,16 @@
         </div>
         <div class="source-switcher" role="group" aria-label="Knowledge sources">
           <button id="tab-reviews" class="source-pill-button tab-button active" type="button">
-            Public Reviews
+            Online Reviews
+          </button>
+          <button id="tab-zendesk" class="source-pill-button tab-button" type="button">
+            Zendesk
+          </button>
+          <button id="tab-all" class="source-pill-button tab-button" type="button">
+            All Sources
           </button>
           <button id="tab-internal" class="source-pill-button tab-button" type="button">
-            🚧 Internal Reviews
+            🚧 Internal
           </button>
         </div>
       </header>
@@ -97,7 +103,6 @@
                     <button id="graph-source-all" class="toggle-btn active" type="button">All</button>
                     <button id="graph-source-google" class="toggle-btn" type="button">Google</button>
                     <button id="graph-source-trustpilot" class="toggle-btn" type="button">Trustpilot</button>
-                    <button id="graph-source-csat" class="toggle-btn" type="button">CSAT</button>
                   </div>
                   <div class="graph-filter">
                     <label for="graph-clinic-filter">Clinic:</label>
@@ -130,7 +135,6 @@
                     <option value="">All Sources</option>
                     <option value="google">Google Reviews</option>
                     <option value="trustpilot">Trustpilot</option>
-                    <option value="csat">CSAT (Zendesk)</option>
                   </select>
                 </div>
                 <div class="filter-group">
@@ -195,6 +199,214 @@
                 <button id="prev-page" class="pagination-btn" disabled>Previous</button>
                 <span id="page-info">Page 1</span>
                 <button id="next-page" class="pagination-btn">Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Zendesk View -->
+        <div id="zendesk-view" class="tab-content">
+          <div class="reviews-combined-layout">
+            <!-- Chat -->
+            <div class="reviews-chat-section">
+              <section id="zendesk-chat-stream" aria-live="polite">
+                <div class="empty-state"><p>Ask anything about Zendesk tickets and CSAT</p></div>
+              </section>
+              <div class="chat-filters">
+                <div class="filter-group">
+                  <label for="zendesk-chat-clinic-filter">Clinic</label>
+                  <select id="zendesk-chat-clinic-filter"><option value="">All Clinics</option></select>
+                </div>
+                <div class="filter-group">
+                  <label for="zendesk-chat-date-from">Date From</label>
+                  <input type="date" id="zendesk-chat-date-from" />
+                </div>
+                <div class="filter-group">
+                  <label for="zendesk-chat-date-to">Date To</label>
+                  <input type="date" id="zendesk-chat-date-to" />
+                </div>
+                <div class="filter-actions">
+                  <button type="button" id="zendesk-chat-clear-filters" class="filter-btn filter-btn-secondary">Clear Filters</button>
+                </div>
+              </div>
+              <form id="zendesk-ask-form">
+                <div class="input-wrapper">
+                  <textarea name="zendesk-prompt" id="zendesk-prompt" rows="1" placeholder="Ask about tickets, CSAT, issues..." autocomplete="off"></textarea>
+                  <button type="submit" aria-label="Send"><span>Send</span></button>
+                </div>
+              </form>
+            </div>
+
+            <!-- CSAT Graph -->
+            <div class="ratings-graph-container">
+              <div class="graph-header">
+                <h3>CSAT Satisfaction Over Time</h3>
+                <div class="graph-controls">
+                  <div class="graph-period-toggle">
+                    <button id="zendesk-period-weekly" class="toggle-btn" type="button">Weekly</button>
+                    <button id="zendesk-period-monthly" class="toggle-btn active" type="button">Monthly</button>
+                    <button id="zendesk-period-quarterly" class="toggle-btn" type="button">Quarterly</button>
+                    <button id="zendesk-period-yearly" class="toggle-btn" type="button">Yearly</button>
+                  </div>
+                  <div class="graph-filter">
+                    <label for="zendesk-graph-clinic">Clinic:</label>
+                    <select id="zendesk-graph-clinic"><option value="">All Clinics</option></select>
+                  </div>
+                </div>
+              </div>
+              <canvas id="zendesk-chart"></canvas>
+            </div>
+
+            <!-- Tickets Table -->
+            <div class="reviews-container">
+              <div class="reviews-filters">
+                <div class="filter-group">
+                  <label for="zd-filter-status">Status</label>
+                  <select id="zd-filter-status">
+                    <option value="">All Statuses</option>
+                    <option value="open">Open</option>
+                    <option value="pending">Pending</option>
+                    <option value="solved">Solved</option>
+                    <option value="closed">Closed</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="zd-filter-clinic">Clinic</label>
+                  <select id="zd-filter-clinic"><option value="">All Clinics</option></select>
+                </div>
+                <div class="filter-group">
+                  <label for="zd-filter-date-from">Date From</label>
+                  <input type="date" id="zd-filter-date-from" />
+                </div>
+                <div class="filter-group">
+                  <label for="zd-filter-date-to">Date To</label>
+                  <input type="date" id="zd-filter-date-to" />
+                </div>
+                <div class="filter-group filter-group-wide">
+                  <label for="zd-filter-search">Search Subject</label>
+                  <input type="text" id="zd-filter-search" placeholder="Search in ticket subject..." />
+                </div>
+                <div class="filter-actions">
+                  <button id="zd-apply-filters" class="filter-btn">Apply Filters</button>
+                  <button id="zd-clear-filters" class="filter-btn filter-btn-secondary">Clear</button>
+                </div>
+              </div>
+              <div class="reviews-info"><span id="zd-tickets-count">Loading tickets...</span></div>
+              <div class="reviews-table-container">
+                <table class="reviews-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Status</th>
+                      <th>Category</th>
+                      <th>Clinic</th>
+                      <th>Subject</th>
+                    </tr>
+                  </thead>
+                  <tbody id="zd-tickets-tbody">
+                    <tr><td colspan="5" class="loading-state">Loading tickets...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="reviews-pagination">
+                <button id="zd-prev-page" class="pagination-btn" disabled>Previous</button>
+                <span id="zd-page-info">Page 1</span>
+                <button id="zd-next-page" class="pagination-btn">Next</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- All Sources View -->
+        <div id="all-view" class="tab-content">
+          <div class="reviews-combined-layout">
+            <!-- Graph with source toggle -->
+            <div class="ratings-graph-container">
+              <div class="graph-header">
+                <h3>Ratings Over Time — All Sources</h3>
+                <div class="graph-controls">
+                  <div class="graph-period-toggle">
+                    <button id="all-period-weekly" class="toggle-btn active" type="button">Weekly</button>
+                    <button id="all-period-monthly" class="toggle-btn" type="button">Monthly</button>
+                    <button id="all-period-quarterly" class="toggle-btn" type="button">Quarterly</button>
+                    <button id="all-period-yearly" class="toggle-btn" type="button">Yearly</button>
+                  </div>
+                  <div class="graph-period-toggle">
+                    <button id="all-source-all" class="toggle-btn active" type="button">All</button>
+                    <button id="all-source-google" class="toggle-btn" type="button">Google</button>
+                    <button id="all-source-trustpilot" class="toggle-btn" type="button">Trustpilot</button>
+                    <button id="all-source-csat" class="toggle-btn" type="button">CSAT</button>
+                  </div>
+                  <div class="graph-filter">
+                    <label for="all-graph-clinic">Clinic:</label>
+                    <select id="all-graph-clinic"><option value="">All Clinics</option></select>
+                  </div>
+                </div>
+              </div>
+              <canvas id="all-chart"></canvas>
+            </div>
+
+            <!-- Combined Table -->
+            <div class="reviews-container">
+              <div class="reviews-filters">
+                <div class="filter-group">
+                  <label for="all-filter-source">Source</label>
+                  <select id="all-filter-source">
+                    <option value="">All Sources</option>
+                    <option value="google">Google Reviews</option>
+                    <option value="trustpilot">Trustpilot</option>
+                    <option value="csat">CSAT (Zendesk)</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="all-filter-clinic">Clinic</label>
+                  <select id="all-filter-clinic"><option value="">All Clinics</option></select>
+                </div>
+                <div class="filter-group">
+                  <label for="all-filter-rating">Rating</label>
+                  <select id="all-filter-rating">
+                    <option value="">All Ratings</option>
+                    <option value="5">5 Stars</option>
+                    <option value="4">4 Stars</option>
+                    <option value="3">3 Stars</option>
+                    <option value="2">2 Stars</option>
+                    <option value="1">1 Star</option>
+                  </select>
+                </div>
+                <div class="filter-group">
+                  <label for="all-filter-date-from">Date From</label>
+                  <input type="date" id="all-filter-date-from" />
+                </div>
+                <div class="filter-group">
+                  <label for="all-filter-date-to">Date To</label>
+                  <input type="date" id="all-filter-date-to" />
+                </div>
+                <div class="filter-actions">
+                  <button id="all-apply-filters" class="filter-btn">Apply Filters</button>
+                  <button id="all-clear-filters" class="filter-btn filter-btn-secondary">Clear</button>
+                </div>
+              </div>
+              <div class="reviews-info"><span id="all-reviews-count">Loading...</span></div>
+              <div class="reviews-table-container">
+                <table class="reviews-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Source</th>
+                      <th>Rating</th>
+                      <th>Clinic</th>
+                      <th>Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody id="all-reviews-tbody">
+                    <tr><td colspan="5" class="loading-state">Loading...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="reviews-pagination">
+                <button id="all-prev-page" class="pagination-btn" disabled>Previous</button>
+                <span id="all-page-info">Page 1</span>
+                <button id="all-next-page" class="pagination-btn">Next</button>
               </div>
             </div>
           </div>
@@ -354,5 +566,7 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script type="module" src="./app.js"></script>
     <script type="module" src="./internal-reviews.js"></script>
+    <script type="module" src="./zendesk-view.js"></script>
+    <script type="module" src="./all-view.js"></script>
   </body>
 </html>

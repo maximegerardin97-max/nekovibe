@@ -29,25 +29,25 @@ function initSupabaseClient() {
 
 // ===== Tab Switching =====
 function setupTabSwitching() {
-  const tabReviews = document.getElementById("tab-reviews");
+  const tabReviews  = document.getElementById("tab-reviews");
+  const tabZendesk  = document.getElementById("tab-zendesk");
+  const tabAll      = document.getElementById("tab-all");
   const tabInternal = document.getElementById("tab-internal");
-  const reviewsView = document.getElementById("reviews-view");
+  const reviewsView  = document.getElementById("reviews-view");
+  const zendeskView  = document.getElementById("zendesk-view");
+  const allView      = document.getElementById("all-view");
   const internalView = document.getElementById("internal-view");
 
-  if (!tabReviews || !tabInternal || !reviewsView || !internalView) {
-    console.warn("Tab elements not found");
-    return;
-  }
+  const allTabs  = [tabReviews, tabZendesk, tabAll, tabInternal];
+  const allViews = [reviewsView, zendeskView, allView, internalView];
 
   function switchToTab(tabName) {
-    tabReviews.classList.remove("active");
-    tabInternal.classList.remove("active");
-    reviewsView.classList.remove("active");
-    internalView.classList.remove("active");
+    allTabs.forEach(t  => t?.classList.remove("active"));
+    allViews.forEach(v => v?.classList.remove("active"));
 
     if (tabName === "reviews") {
-      tabReviews.classList.add("active");
-      reviewsView.classList.add("active");
+      tabReviews?.classList.add("active");
+      reviewsView?.classList.add("active");
       if (typeof loadClinics === "function") loadClinics();
       if (typeof loadTopics === "function") loadTopics();
       if (typeof loadReviews === "function") loadReviews();
@@ -55,22 +55,25 @@ function setupTabSwitching() {
         const graphFilter = document.getElementById("graph-clinic-filter");
         updateRatingsGraph(graphFilter?.value || "");
       }
+    } else if (tabName === "zendesk") {
+      tabZendesk?.classList.add("active");
+      zendeskView?.classList.add("active");
+      if (typeof activateZendeskTab === "function") activateZendeskTab();
+    } else if (tabName === "all") {
+      tabAll?.classList.add("active");
+      allView?.classList.add("active");
+      if (typeof activateAllTab === "function") activateAllTab();
     } else if (tabName === "internal") {
-      tabInternal.classList.add("active");
-      internalView.classList.add("active");
+      tabInternal?.classList.add("active");
+      internalView?.classList.add("active");
       if (typeof activateInternalTab === "function") activateInternalTab();
     }
   }
 
-  tabReviews.addEventListener("click", () => {
-    window._stayOnInternalTab = false;
-    switchToTab("reviews");
-  });
-  tabInternal.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    switchToTab("internal");
-  });
+  tabReviews?.addEventListener("click",  () => { window._stayOnInternalTab = false; switchToTab("reviews"); });
+  tabZendesk?.addEventListener("click",  () => switchToTab("zendesk"));
+  tabAll?.addEventListener("click",      () => switchToTab("all"));
+  tabInternal?.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); switchToTab("internal"); });
 
   switchToTab("reviews");
 }
@@ -720,13 +723,20 @@ function formatPeriodLabel(key, period) {
     .toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
-async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "") {
+async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "", includeCSAT = false) {
   if (!supabaseClient) return [];
   try {
     const buildQ = (table) => {
       let q = supabaseClient.from(table)
         .select("published_at, rating, clinic_name")
         .order("published_at", { ascending: true });
+      q = applyClinicFilter(q, clinicFilter);
+      return q;
+    };
+    const buildCsatQ = () => {
+      let q = supabaseClient.from("zendesk_csat")
+        .select("created_at, rating, clinic_name")
+        .order("created_at", { ascending: true });
       q = applyClinicFilter(q, clinicFilter);
       return q;
     };
@@ -742,17 +752,19 @@ async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "") {
       return (data || []).map(r => ({ ...r, source: "trustpilot" }));
     }
     if (sourceFilter === "csat") {
-      const { data, error } = await buildQ("zendesk_csat");
+      const { data, error } = await buildCsatQ();
       if (error) throw error;
-      return (data || []).map(r => ({ ...r, source: "csat" }));
+      return (data || []).map(r => ({ ...r, published_at: r.created_at, source: "csat" }));
     }
     // All sources
-    const [gRes, tRes, cRes] = await Promise.allSettled([
-      buildQ("google_reviews"), buildQ("trustpilot_reviews"), buildQ("zendesk_csat")
-    ]);
-    const gData = (gRes.status === "fulfilled" ? gRes.value.data || [] : []).map(r => ({ ...r, source: "google" }));
-    const tData = (tRes.status === "fulfilled" ? tRes.value.data || [] : []).map(r => ({ ...r, source: "trustpilot" }));
-    const cData = (cRes.status === "fulfilled" ? cRes.value.data || [] : []).map(r => ({ ...r, source: "csat" }));
+    const promises = [buildQ("google_reviews"), buildQ("trustpilot_reviews")];
+    if (includeCSAT) promises.push(buildCsatQ());
+    const results = await Promise.allSettled(promises);
+    const gData = (results[0].status === "fulfilled" ? results[0].value.data || [] : []).map(r => ({ ...r, source: "google" }));
+    const tData = (results[1].status === "fulfilled" ? results[1].value.data || [] : []).map(r => ({ ...r, source: "trustpilot" }));
+    const cData = includeCSAT && results[2]?.status === "fulfilled"
+      ? (results[2].value.data || []).map(r => ({ ...r, published_at: r.created_at, source: "csat" }))
+      : [];
     return [...gData, ...tData, ...cData].sort((a, b) => new Date(a.published_at) - new Date(b.published_at));
   } catch (error) {
     console.error("Error loading reviews for graph:", error);
@@ -894,6 +906,37 @@ async function updateRatingsGraph(clinicFilter = "", sourceFilter = "") {
 }
 window.updateRatingsGraph = updateRatingsGraph;
 
+window.buildRatingsChartOptions = function(period) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: true, position: "top" },
+      tooltip: { callbacks: { label: (ctx) => {
+        const count = ctx.dataset.countData?.[ctx.dataIndex];
+        return `Rating: ${ctx.parsed.y} / 5.0${count != null ? `  (${count} review${count !== 1 ? "s" : ""})` : ""}`;
+      } } },
+    },
+    scales: {
+      y: {
+        beginAtZero: false, min: 0, max: 5,
+        ticks: { stepSize: 0.5, callback: (v) => v + "★" },
+        title: { display: true, text: "Rating (out of 5)" },
+      },
+      x: { title: { display: true, text: period === "weekly" ? "Week" : period === "monthly" ? "Month" : period === "quarterly" ? "Quarter" : "Year" } },
+    },
+  };
+};
+
+window.getPeriodKey = getPeriodKey;
+window.formatPeriodLabel = formatPeriodLabel;
+window.loadReviewsForGraph = loadReviewsForGraph;
+window.buildClinicOptions = buildClinicOptions;
+window.loadClinicsForFilter = loadClinicsForFilter;
+window.applyClinicFilter = applyClinicFilter;
+window.resolveClinicFilter = resolveClinicFilter;
+window.escapeHtml = escapeHtml;
+
 // ===== Init =====
 let tabSwitchingSetup = false;
 if (document.readyState === "loading") {
@@ -902,9 +945,16 @@ if (document.readyState === "loading") {
     setupReviewsChat();
     initSupabaseClient();
     setupReviewsView();
+    if (typeof setupZendeskView === "function") setupZendeskView();
+    if (typeof setupAllView === "function") setupAllView();
   });
 } else {
   if (!tabSwitchingSetup) { setupTabSwitching(); tabSwitchingSetup = true; }
   setupReviewsChat();
-  setTimeout(() => { initSupabaseClient(); setupReviewsView(); }, 100);
+  setTimeout(() => {
+    initSupabaseClient();
+    setupReviewsView();
+    if (typeof setupZendeskView === "function") setupZendeskView();
+    if (typeof setupAllView === "function") setupAllView();
+  }, 100);
 }

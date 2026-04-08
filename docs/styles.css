@@ -1218,3 +1218,97 @@ button[type="submit"]:hover {
   font-weight: 400;
 }
 
+.source-badge.source-csat {
+  background: #f0fdf4;
+  color: #16a34a;
+  border: 1px solid #bbf7d0;
+}
+
+.source-badge.source-zendesk {
+  background: #fefce8;
+  color: #ca8a04;
+  border: 1px solid #fef08a;
+}
+
+/* Zendesk view chat stream */
+#zendesk-chat-stream {
+  display: block;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+
+#zendesk-chat-stream .empty-state {
+  padding: 1rem 0;
+  color: var(--text-subtle);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+#zendesk-view .chat-filters,
+#all-view .chat-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  background: var(--card-muted);
+  border-radius: 12px;
+  border: 1px solid var(--line-soft);
+}
+
+#zendesk-view .chat-filters .filter-actions,
+#all-view .chat-filters .filter-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+#zendesk-ask-form .input-wrapper {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+}
+
+#zendesk-ask-form textarea {
+  flex: 1;
+  font-size: 0.95rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--card-bg);
+  color: var(--text-main);
+  font-family: inherit;
+  resize: none;
+  min-height: 56px;
+  max-height: 56px;
+  line-height: 1.5;
+}
+
+#zendesk-ask-form textarea:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+}
+
+#zendesk-ask-form button {
+  padding: 0.75rem 1.5rem;
+  background: var(--accent-blue);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-base);
+  white-space: nowrap;
+}
+
+#zendesk-ask-form button:hover {
+  background: #5a7ba8;
+}
+
+#zendesk-chart,
+#all-chart {
+  max-height: 300px;
+}
+
