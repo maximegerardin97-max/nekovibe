@@ -49,17 +49,25 @@ async function loadTicketInsights() {
       .limit(100);
     if (error) throw error;
 
-    // 2. Build corpus (also used by chat)
+    // 2. Build a lightweight subjects-only corpus for LLM clustering
+    //    (keeps the prompt small to avoid edge fn timeout)
+    const subjectsOnly = (data || []).map((t, i) => {
+      const subj = (t.subject || "").replace(/^Message from:.*?\+\d+\s*/i, "SMS: ").trim() || "—";
+      const snippet = (t.description || "").slice(0, 80).replace(/\n/g, " ").trim();
+      return `${i + 1}. ${subj}${snippet ? " — " + snippet : ""}`;
+    }).join("\n");
+
+    // 3. Build full corpus for chat context (descriptions included)
     _insightCorpus = (data || []).map((t, i) =>
-      `[${i + 1}] Subject: ${t.subject || "—"}\nContent: ${(t.description || "").slice(0, 250)}`
+      `[${i + 1}] Subject: ${t.subject || "—"}\nContent: ${(t.description || "").slice(0, 300)}`
     ).join("\n\n");
 
-    // 3. Ask the LLM to cluster into themes
+    // 4. Ask the LLM to cluster using the compact subjects list
     const functionUrl = document.body.dataset.functionUrl || "";
     const functionKey = document.body.dataset.apikey || "";
 
     const prompt =
-      `[ANALYSIS REQUEST] You are analysing 100 recent customer support tickets from Neko Health, a preventive health screening company.\n\nIdentify the top 5–7 distinct reasons why customers contact us. For each reason return a JSON object with:\n- "name": short label (3–5 words max)\n- "count": estimated number of tickets matching this reason (integer, out of 100)\n- "description": one clear sentence explaining what customers ask about\n- "emoji": a single relevant emoji\n\nReturn ONLY a valid JSON array with no extra text, no markdown fences.\n\nTickets:\n${_insightCorpus}`;
+      `[ANALYSIS REQUEST] These are the subjects/first lines of 100 recent customer support tickets from Neko Health (preventive health scanning company). Identify the top 5–7 distinct contact reasons. For each return a JSON object: "name" (3–5 words), "count" (integer out of 100), "description" (one sentence), "emoji". Return ONLY a JSON array, no markdown, no extra text.\n\nTickets:\n${subjectsOnly}`;
 
     const headers = { "Content-Type": "application/json" };
     if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
