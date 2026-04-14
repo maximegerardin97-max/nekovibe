@@ -30,6 +30,81 @@ function zdEscapeHtml(text) {
   return div.innerHTML;
 }
 
+// ---- Ticket Insights (last 100, AI-powered) ----
+
+let _insightCorpus = ""; // shared with chat
+
+async function loadTicketInsights() {
+  const sc = window.supabaseClient;
+  const grid = document.getElementById("zd-insights-grid");
+  if (!grid || !sc) return;
+
+  grid.innerHTML = '<div class="zd-insights-loading">Analysing last 100 tickets with AI…</div>';
+
+  try {
+    // 1. Fetch last 100 tickets
+    const { data, error } = await sc.from("zendesk_tickets")
+      .select("subject, description, contact_reason, category")
+      .order("created_at", { ascending: false })
+      .limit(100);
+    if (error) throw error;
+
+    // 2. Build corpus (also used by chat)
+    _insightCorpus = (data || []).map((t, i) =>
+      `[${i + 1}] Subject: ${t.subject || "—"}\nContent: ${(t.description || "").slice(0, 250)}`
+    ).join("\n\n");
+
+    // 3. Ask the LLM to cluster into themes
+    const functionUrl = document.body.dataset.functionUrl || "";
+    const functionKey = document.body.dataset.apikey || "";
+
+    const prompt =
+      `[ANALYSIS REQUEST] You are analysing 100 recent customer support tickets from Neko Health, a preventive health screening company.\n\nIdentify the top 5–7 distinct reasons why customers contact us. For each reason return a JSON object with:\n- "name": short label (3–5 words max)\n- "count": estimated number of tickets matching this reason (integer, out of 100)\n- "description": one clear sentence explaining what customers ask about\n- "emoji": a single relevant emoji\n\nReturn ONLY a valid JSON array with no extra text, no markdown fences.\n\nTickets:\n${_insightCorpus}`;
+
+    const headers = { "Content-Type": "application/json" };
+    if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
+
+    const resp = await fetch(functionUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ prompt, sources: ["zendesk"] }),
+    });
+    if (!resp.ok) throw new Error(await resp.text());
+    const result = await resp.json();
+
+    // 4. Parse JSON from answer
+    const answer = result.answer || "";
+    const jsonMatch = answer.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) throw new Error("AI did not return a parseable JSON array");
+    const themes = JSON.parse(jsonMatch[0]);
+
+    renderInsightCards(themes);
+  } catch (e) {
+    console.error("[zendesk-view] insights error", e);
+    grid.innerHTML = `<div class="zd-insights-error">Could not load insights: ${zdEscapeHtml(e.message)}</div>`;
+  }
+}
+
+function renderInsightCards(themes) {
+  const grid = document.getElementById("zd-insights-grid");
+  if (!grid) return;
+  grid.innerHTML = themes.map(t => `
+    <div class="zd-insight-card">
+      <div class="zd-insight-emoji">${t.emoji || "📋"}</div>
+      <div class="zd-insight-body">
+        <div class="zd-insight-name">${zdEscapeHtml(t.name)}</div>
+        <div class="zd-insight-desc">${zdEscapeHtml(t.description)}</div>
+      </div>
+      <div class="zd-insight-count">${t.count}<span class="zd-insight-pct">/ 100</span></div>
+    </div>`).join("");
+}
+
+function setupInsights() {
+  document.getElementById("zd-refresh-insights")?.addEventListener("click", () => {
+    waitForSupabase(loadTicketInsights);
+  });
+}
+
 // ---- Clinic Dropdowns ----
 
 async function loadZendeskClinics() {
@@ -246,7 +321,10 @@ function setupZendeskChat() {
     const rawPrompt = textarea.value.trim();
     if (!rawPrompt) { textarea.focus(); return; }
 
-    const prompt = "[Zendesk data] " + rawPrompt;
+    const contextPrefix = _insightCorpus
+      ? `[CONTEXT: Last 100 Zendesk tickets]\n${_insightCorpus}\n\n[USER QUESTION]: `
+      : "[Zendesk data] ";
+    const prompt = contextPrefix + rawPrompt;
     const filters = getFilters();
 
     appendMsg(chatStream, { role: "user", content: rawPrompt });
@@ -293,6 +371,7 @@ export function activateZendeskTab() {
   waitForSupabase(() => {
     loadZendeskClinics();
     loadZendeskTickets();
+    if (!_insightCorpus) loadTicketInsights();
   });
 }
 window.activateZendeskTab = activateZendeskTab;
@@ -300,6 +379,7 @@ window.activateZendeskTab = activateZendeskTab;
 export function setupZendeskView() {
   window.setupZendeskView = setupZendeskView;
   setupZendeskChat();
+  setupInsights();
   setupZendeskTicketsTable();
   zdState.initialized = true;
 

@@ -210,7 +210,7 @@
             <!-- Chat -->
             <div class="reviews-chat-section">
               <section id="zendesk-chat-stream" aria-live="polite">
-                <div class="empty-state"><p>Ask anything about Zendesk tickets and CSAT</p></div>
+                <div class="empty-state"><p>Ask anything about the last 100 tickets — loaded as AI context</p></div>
               </section>
               <div class="chat-filters">
                 <div class="filter-group">
@@ -231,10 +231,23 @@
               </div>
               <form id="zendesk-ask-form">
                 <div class="input-wrapper">
-                  <textarea name="zendesk-prompt" id="zendesk-prompt" rows="1" placeholder="Ask about tickets, CSAT, issues..." autocomplete="off"></textarea>
+                  <textarea name="zendesk-prompt" id="zendesk-prompt" rows="1" placeholder="e.g. What's the most common complaint? Which issues mention billing?" autocomplete="off"></textarea>
                   <button type="submit" aria-label="Send"><span>Send</span></button>
                 </div>
               </form>
+            </div>
+
+            <!-- Insights from last 100 tickets -->
+            <div class="zd-insights-section">
+              <div class="zd-insights-header">
+                <div>
+                  <h3 class="zd-insights-title">Top contact reasons <span class="zd-insights-badge">last 100 tickets · AI</span></h3>
+                </div>
+                <button id="zd-refresh-insights" class="filter-btn filter-btn-secondary">↻ Refresh</button>
+              </div>
+              <div id="zd-insights-grid" class="zd-insights-grid">
+                <div class="zd-insights-empty">Click Refresh to analyse the last 100 tickets with AI.</div>
+              </div>
             </div>
 
             <!-- Tickets Table -->
