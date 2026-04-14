@@ -39,7 +39,7 @@ async function loadTicketInsights() {
   const grid = document.getElementById("zd-insights-grid");
   if (!grid || !sc) return;
 
-  grid.innerHTML = '<div class="zd-insights-loading">Analysing last 100 tickets with AI…</div>';
+  grid.innerHTML = '<span class="zd-insights-label">Analysing last 100 tickets…</span>';
 
   try {
     // 1. Fetch last 100 tickets
@@ -89,22 +89,19 @@ async function loadTicketInsights() {
     renderInsightCards(themes);
   } catch (e) {
     console.error("[zendesk-view] insights error", e);
-    grid.innerHTML = `<div class="zd-insights-error">Could not load insights: ${zdEscapeHtml(e.message)}</div>`;
+    grid.innerHTML = `<span class="zd-insights-label" style="color:#dc2626">Could not load insights: ${zdEscapeHtml(e.message)}</span><button id="zd-refresh-insights" class="source-pill" style="font-size:0.82rem;border:none;background:none;color:var(--text-subtle);cursor:pointer;">↻ Retry</button>`;
+    document.getElementById("zd-refresh-insights")?.addEventListener("click", () => waitForSupabase(loadTicketInsights));
   }
 }
 
 function renderInsightCards(themes) {
   const grid = document.getElementById("zd-insights-grid");
   if (!grid) return;
-  grid.innerHTML = themes.map(t => `
-    <div class="zd-insight-card">
-      <div class="zd-insight-emoji">${t.emoji || "📋"}</div>
-      <div class="zd-insight-body">
-        <div class="zd-insight-name">${zdEscapeHtml(t.name)}</div>
-        <div class="zd-insight-desc">${zdEscapeHtml(t.description)}</div>
-      </div>
-      <div class="zd-insight-count">${t.count}<span class="zd-insight-pct">/ 100</span></div>
-    </div>`).join("");
+  const pills = themes.map(t =>
+    `<span class="source-pill" title="${zdEscapeHtml(t.description)}">${t.emoji || "📋"} ${zdEscapeHtml(t.name)} <strong style="margin-left:4px;color:var(--accent-teal)">${t.count}</strong></span>`
+  ).join("");
+  grid.innerHTML = `<span class="zd-insights-label">Top reasons · last 100 tickets · AI</span>${pills}<button id="zd-refresh-insights" class="source-pill" style="font-size:0.82rem;border:none;background:none;color:var(--text-subtle);cursor:pointer;">↻ Refresh</button>`;
+  document.getElementById("zd-refresh-insights")?.addEventListener("click", () => waitForSupabase(loadTicketInsights));
 }
 
 function setupInsights() {
