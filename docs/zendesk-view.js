@@ -216,7 +216,7 @@ async function loadZendeskTickets() {
 
   try {
     let q = sc.from("zendesk_tickets")
-      .select("created_at, contact_reason, subject, description", { count: "exact" });
+      .select("created_at, contact_reason, subject, description", { count: "estimated" });
 
     if (zdState.filters.dateFrom) q = q.gte("created_at", zdState.filters.dateFrom);
     if (zdState.filters.dateTo) {
