@@ -5,10 +5,7 @@ const zdState = {
   pageSize: 50,
   filters: { status: "", clinic: "", dateFrom: "", dateTo: "", search: "" },
   initialized: false,
-  graphPeriod: "monthly",
 };
-
-let zdChart = null;
 
 // ---- Helpers ----
 
@@ -60,149 +57,11 @@ async function loadZendeskClinics() {
 
     [
       document.getElementById("zendesk-chat-clinic-filter"),
-      document.getElementById("zendesk-graph-clinic"),
       document.getElementById("zd-filter-clinic"),
     ].forEach(sel => { if (sel) sel.innerHTML = optionsHtml; });
   } catch (e) {
     console.error("[zendesk-view] loadZendeskClinics error", e);
   }
-}
-
-// ---- CSAT Graph ----
-
-async function loadCsatForGraph(clinicFilter = "") {
-  const sc = window.supabaseClient;
-  if (!sc) return [];
-  try {
-    let q = sc.from("zendesk_csat")
-      .select("created_at, rating, clinic_name")
-      .order("created_at", { ascending: true });
-    if (typeof window.applyClinicFilter === "function") {
-      q = window.applyClinicFilter(q, clinicFilter);
-    } else if (clinicFilter) {
-      q = q.eq("clinic_name", clinicFilter);
-    }
-    const { data, error } = await q;
-    if (error) throw error;
-    return (data || []).map(r => ({ ...r, published_at: r.created_at }));
-  } catch (e) {
-    console.error("[zendesk-view] loadCsatForGraph error", e);
-    return [];
-  }
-}
-
-async function updateZendeskGraph(clinicFilter = "") {
-  const canvas = document.getElementById("zendesk-chart");
-  if (!canvas) return;
-
-  const reviews = await loadCsatForGraph(clinicFilter);
-
-  if (!reviews || reviews.length === 0) {
-    if (zdChart) { zdChart.destroy(); zdChart = null; }
-    return;
-  }
-
-  const getPeriodKey = window.getPeriodKey || ((dateStr, period) => {
-    const d = new Date(dateStr);
-    if (period === "monthly") return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    if (period === "quarterly") return `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
-    if (period === "yearly") return String(d.getFullYear());
-    // weekly — Monday
-    const day = d.getDay();
-    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-    const monday = new Date(d); monday.setDate(diff);
-    return monday.toISOString().split("T")[0];
-  });
-
-  const formatLabel = window.formatPeriodLabel || ((key, period) => {
-    if (period === "monthly") {
-      const [year, month] = key.split("-");
-      return new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleDateString("en-US", { month: "short", year: "numeric" });
-    }
-    if (period === "quarterly" || period === "yearly") return key;
-    return new Date(key + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
-  });
-
-  const periodMap = new Map();
-  reviews.forEach(r => {
-    if (!r.published_at || r.rating == null) return;
-    const key = getPeriodKey(r.published_at, zdState.graphPeriod);
-    if (!periodMap.has(key)) periodMap.set(key, { total: 0, count: 0 });
-    const d = periodMap.get(key);
-    d.total += r.rating;
-    d.count += 1;
-  });
-
-  const periods = Array.from(periodMap.keys()).sort();
-  const avgRatings = periods.map(k => (periodMap.get(k).total / periodMap.get(k).count).toFixed(2));
-  const countData = periods.map(k => periodMap.get(k).count);
-  const labels = periods.map(k => formatLabel(k, zdState.graphPeriod));
-
-  const ctx = canvas.getContext("2d");
-  if (zdChart) zdChart.destroy();
-
-  const options = typeof window.buildRatingsChartOptions === "function"
-    ? window.buildRatingsChartOptions(zdState.graphPeriod)
-    : {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: true, position: "top" },
-          tooltip: { callbacks: { label: (ctx) => {
-            const count = ctx.dataset.countData?.[ctx.dataIndex];
-            return `CSAT: ${ctx.parsed.y} / 5.0${count != null ? `  (${count} response${count !== 1 ? "s" : ""})` : ""}`;
-          } } },
-        },
-        scales: {
-          y: { beginAtZero: false, min: 0, max: 5, ticks: { stepSize: 0.5, callback: v => v + "★" }, title: { display: true, text: "CSAT Rating (out of 5)" } },
-          x: { title: { display: true, text: zdState.graphPeriod === "weekly" ? "Week" : zdState.graphPeriod === "monthly" ? "Month" : zdState.graphPeriod === "quarterly" ? "Quarter" : "Year" } },
-        },
-      };
-
-  zdChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels,
-      datasets: [{
-        label: "CSAT Average Rating",
-        data: avgRatings,
-        countData,
-        borderColor: "rgb(22, 163, 74)",
-        backgroundColor: "rgba(22, 163, 74, 0.1)",
-        tension: 0.4,
-        pointRadius: 3,
-        pointHoverRadius: 5,
-        fill: true,
-      }],
-    },
-    options,
-  });
-}
-
-function setupZendeskGraph() {
-  const clinicFilter = document.getElementById("zendesk-graph-clinic");
-  const weeklyBtn    = document.getElementById("zendesk-period-weekly");
-  const monthlyBtn   = document.getElementById("zendesk-period-monthly");
-  const quarterlyBtn = document.getElementById("zendesk-period-quarterly");
-  const yearlyBtn    = document.getElementById("zendesk-period-yearly");
-  const allPeriodBtns = [weeklyBtn, monthlyBtn, quarterlyBtn, yearlyBtn];
-
-  if (!document.getElementById("zendesk-chart")) return;
-
-  const refresh = () => updateZendeskGraph(clinicFilter?.value || "");
-
-  clinicFilter?.addEventListener("change", refresh);
-
-  const setPeriod = (period, activeBtn) => {
-    zdState.graphPeriod = period;
-    allPeriodBtns.forEach(b => b?.classList.remove("active"));
-    activeBtn?.classList.add("active");
-    refresh();
-  };
-  weeklyBtn?.addEventListener("click",    () => setPeriod("weekly", weeklyBtn));
-  monthlyBtn?.addEventListener("click",   () => setPeriod("monthly", monthlyBtn));
-  quarterlyBtn?.addEventListener("click", () => setPeriod("quarterly", quarterlyBtn));
-  yearlyBtn?.addEventListener("click",    () => setPeriod("yearly", yearlyBtn));
 }
 
 // ---- Tickets Table ----
@@ -433,7 +292,6 @@ export function activateZendeskTab() {
   if (!zdState.initialized) return; // will be called again once init is done
   waitForSupabase(() => {
     loadZendeskClinics();
-    updateZendeskGraph(document.getElementById("zendesk-graph-clinic")?.value || "");
     loadZendeskTickets();
   });
 }
@@ -442,7 +300,6 @@ window.activateZendeskTab = activateZendeskTab;
 export function setupZendeskView() {
   window.setupZendeskView = setupZendeskView;
   setupZendeskChat();
-  setupZendeskGraph();
   setupZendeskTicketsTable();
   zdState.initialized = true;
 
