@@ -216,7 +216,7 @@ async function loadZendeskTickets() {
 
   try {
     let q = sc.from("zendesk_tickets")
-      .select("created_at, contact_reason, subject, description", { count: "estimated" });
+      .select("created_at, subject, description", { count: "estimated" });
 
     if (zdState.filters.dateFrom) q = q.gte("created_at", zdState.filters.dateFrom);
     if (zdState.filters.dateTo) {
@@ -266,38 +266,44 @@ function updateZendeskTicketsTable(rows, errorMessage) {
   if (!tbody) return;
 
   if (errorMessage) {
-    tbody.innerHTML = `<tr><td colspan="4" class="error-state">${zdEscapeHtml(errorMessage)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" class="error-state">${zdEscapeHtml(errorMessage)}</td></tr>`;
     return;
   }
   if (!rows || rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No tickets found matching your filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="3" class="empty-state">No tickets found matching your filters.</td></tr>';
     return;
   }
+
+  const toggleComment = window.toggleComment || function(commentId) {
+    const textSpan = document.getElementById(`${commentId}-text`);
+    const fullSpan = document.getElementById(`${commentId}-full`);
+    const button   = document.querySelector(`[data-comment-id="${commentId}"]`);
+    if (!textSpan || !fullSpan || !button) return;
+    const isExpanded = fullSpan.style.display !== "none";
+    textSpan.style.display = isExpanded ? "inline" : "none";
+    fullSpan.style.display  = isExpanded ? "none"   : "inline";
+    button.textContent = isExpanded ? "Show more" : "Show less";
+  };
+  window.toggleComment = window.toggleComment || toggleComment;
 
   tbody.innerHTML = rows.map((ticket, idx) => {
     const date    = ticket.created_at
       ? new Date(ticket.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })
       : "N/A";
-    const reason  = ticket.contact_reason || "—";
     const subject = ticket.subject || "—";
     const body    = (ticket.description || "").trim();
-    const contentId = `zd-content-${idx}`;
+    const commentId = `zd-comment-${idx}`;
     const maxLen  = 200;
-    const truncated = body.length > maxLen ? body.slice(0, maxLen) + "…" : body;
-    const expandBtn = body.length > maxLen
-      ? `<button class="expand-btn" onclick="
-          var el=document.getElementById('${contentId}');
-          var btn=this;
-          if(el.dataset.expanded==='1'){el.textContent=${JSON.stringify(truncated)};el.dataset.expanded='0';btn.textContent='Show more';}
-          else{el.textContent=${JSON.stringify(body)};el.dataset.expanded='1';btn.textContent='Show less';}
-        ">Show more</button>`
-      : "";
+    const isTruncated = body.length > maxLen;
+    const truncated = isTruncated ? body.slice(0, maxLen) + "..." : body;
 
     return `<tr>
       <td class="review-date" style="white-space:nowrap">${zdEscapeHtml(date)}</td>
-      <td><span style="font-size:0.78rem;background:#f1f5f9;padding:2px 7px;border-radius:9px;color:#475569">${zdEscapeHtml(reason)}</span></td>
       <td style="font-weight:500">${zdEscapeHtml(subject)}</td>
-      <td class="review-comment"><span id="${contentId}">${zdEscapeHtml(truncated)}</span>${expandBtn}</td>
+      <td class="review-comment">
+        <span class="comment-text" id="${commentId}-text">${zdEscapeHtml(truncated)}</span>
+        ${isTruncated ? `<span class="comment-full" id="${commentId}-full" style="display:none">${zdEscapeHtml(body)}</span><button class="comment-toggle" data-comment-id="${commentId}" onclick="toggleComment('${commentId}')">Show more</button>` : ""}
+      </td>
     </tr>`;
   }).join("");
 }
