@@ -261,20 +261,6 @@
             <div class="reviews-container">
               <div class="reviews-filters">
                 <div class="filter-group">
-                  <label for="zd-filter-status">Status</label>
-                  <select id="zd-filter-status">
-                    <option value="">All Statuses</option>
-                    <option value="open">Open</option>
-                    <option value="pending">Pending</option>
-                    <option value="solved">Solved</option>
-                    <option value="closed">Closed</option>
-                  </select>
-                </div>
-                <div class="filter-group">
-                  <label for="zd-filter-clinic">Clinic</label>
-                  <select id="zd-filter-clinic"><option value="">All Clinics</option></select>
-                </div>
-                <div class="filter-group">
                   <label for="zd-filter-date-from">Date From</label>
                   <input type="date" id="zd-filter-date-from" />
                 </div>
@@ -283,8 +269,8 @@
                   <input type="date" id="zd-filter-date-to" />
                 </div>
                 <div class="filter-group filter-group-wide">
-                  <label for="zd-filter-search">Search Subject</label>
-                  <input type="text" id="zd-filter-search" placeholder="Search in ticket subject..." />
+                  <label for="zd-filter-search">Search</label>
+                  <input type="text" id="zd-filter-search" placeholder="Search in subject or content..." />
                 </div>
                 <div class="filter-actions">
                   <button id="zd-apply-filters" class="filter-btn">Apply Filters</button>
@@ -297,14 +283,13 @@
                   <thead>
                     <tr>
                       <th>Date</th>
-                      <th>Status</th>
-                      <th>Category</th>
-                      <th>Clinic</th>
+                      <th>Contact Reason</th>
                       <th>Subject</th>
+                      <th>Content</th>
                     </tr>
                   </thead>
                   <tbody id="zd-tickets-tbody">
-                    <tr><td colspan="5" class="loading-state">Loading tickets...</td></tr>
+                    <tr><td colspan="4" class="loading-state">Loading tickets...</td></tr>
                   </tbody>
                 </table>
               </div>

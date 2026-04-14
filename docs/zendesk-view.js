@@ -212,27 +212,22 @@ async function loadZendeskTickets() {
   if (!sc) { updateZendeskTicketsTable([], "Supabase not initialized."); return; }
 
   const tbody = document.getElementById("zd-tickets-tbody");
-  if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="loading-state">Loading tickets...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading tickets...</td></tr>';
 
   try {
     let q = sc.from("zendesk_tickets")
-      .select("created_at, status, category, clinic_name, subject", { count: "exact" });
+      .select("created_at, contact_reason, subject, description", { count: "exact" });
 
-    if (zdState.filters.status) q = q.eq("status", zdState.filters.status);
-    if (zdState.filters.clinic) {
-      if (typeof window.applyClinicFilter === "function") {
-        q = window.applyClinicFilter(q, zdState.filters.clinic);
-      } else {
-        q = q.eq("clinic_name", zdState.filters.clinic);
-      }
-    }
     if (zdState.filters.dateFrom) q = q.gte("created_at", zdState.filters.dateFrom);
     if (zdState.filters.dateTo) {
       const end = new Date(zdState.filters.dateTo);
       end.setDate(end.getDate() + 1);
       q = q.lt("created_at", end.toISOString().split("T")[0]);
     }
-    if (zdState.filters.search) q = q.ilike("subject", `%${zdState.filters.search}%`);
+    if (zdState.filters.search) {
+      const s = zdState.filters.search;
+      q = q.or(`subject.ilike.%${s}%,description.ilike.%${s}%`);
+    }
 
     q = q.order("created_at", { ascending: false });
     const from = (zdState.currentPage - 1) * zdState.pageSize;
@@ -271,36 +266,38 @@ function updateZendeskTicketsTable(rows, errorMessage) {
   if (!tbody) return;
 
   if (errorMessage) {
-    tbody.innerHTML = `<tr><td colspan="5" class="error-state">${zdEscapeHtml(errorMessage)}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" class="error-state">${zdEscapeHtml(errorMessage)}</td></tr>`;
     return;
   }
   if (!rows || rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No tickets found matching your filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">No tickets found matching your filters.</td></tr>';
     return;
   }
 
-  tbody.innerHTML = rows.map(ticket => {
-    const date   = ticket.created_at
-      ? new Date(ticket.created_at).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+  tbody.innerHTML = rows.map((ticket, idx) => {
+    const date    = ticket.created_at
+      ? new Date(ticket.created_at).toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" })
       : "N/A";
-    const status   = ticket.status   || "—";
-    const category = ticket.category || "—";
-    const clinic   = ticket.clinic_name || "—";
-    const subject  = ticket.subject  || "—";
-
-    const statusClass = {
-      open: "style=\"color:#dc2626;font-weight:600\"",
-      pending: "style=\"color:#d97706;font-weight:600\"",
-      solved: "style=\"color:#16a34a;font-weight:600\"",
-      closed: "style=\"color:#6b7280;font-weight:600\"",
-    }[status?.toLowerCase()] || "";
+    const reason  = ticket.contact_reason || "—";
+    const subject = ticket.subject || "—";
+    const body    = (ticket.description || "").trim();
+    const contentId = `zd-content-${idx}`;
+    const maxLen  = 200;
+    const truncated = body.length > maxLen ? body.slice(0, maxLen) + "…" : body;
+    const expandBtn = body.length > maxLen
+      ? `<button class="expand-btn" onclick="
+          var el=document.getElementById('${contentId}');
+          var btn=this;
+          if(el.dataset.expanded==='1'){el.textContent=${JSON.stringify(truncated)};el.dataset.expanded='0';btn.textContent='Show more';}
+          else{el.textContent=${JSON.stringify(body)};el.dataset.expanded='1';btn.textContent='Show less';}
+        ">Show more</button>`
+      : "";
 
     return `<tr>
-      <td class="review-date">${zdEscapeHtml(date)}</td>
-      <td ${statusClass}>${zdEscapeHtml(status)}</td>
-      <td>${zdEscapeHtml(category)}</td>
-      <td class="review-clinic">${zdEscapeHtml(clinic)}</td>
-      <td>${zdEscapeHtml(subject)}</td>
+      <td class="review-date" style="white-space:nowrap">${zdEscapeHtml(date)}</td>
+      <td><span style="font-size:0.78rem;background:#f1f5f9;padding:2px 7px;border-radius:9px;color:#475569">${zdEscapeHtml(reason)}</span></td>
+      <td style="font-weight:500">${zdEscapeHtml(subject)}</td>
+      <td class="review-comment"><span id="${contentId}">${zdEscapeHtml(truncated)}</span>${expandBtn}</td>
     </tr>`;
   }).join("");
 }
@@ -308,8 +305,6 @@ function updateZendeskTicketsTable(rows, errorMessage) {
 function setupZendeskTicketsTable() {
   document.getElementById("zd-apply-filters")?.addEventListener("click", () => {
     zdState.filters = {
-      status:   document.getElementById("zd-filter-status")?.value  || "",
-      clinic:   document.getElementById("zd-filter-clinic")?.value  || "",
       dateFrom: document.getElementById("zd-filter-date-from")?.value || "",
       dateTo:   document.getElementById("zd-filter-date-to")?.value   || "",
       search:   document.getElementById("zd-filter-search")?.value    || "",
@@ -319,9 +314,9 @@ function setupZendeskTicketsTable() {
   });
 
   document.getElementById("zd-clear-filters")?.addEventListener("click", () => {
-    ["zd-filter-status","zd-filter-clinic","zd-filter-date-from","zd-filter-date-to","zd-filter-search"]
+    ["zd-filter-date-from","zd-filter-date-to","zd-filter-search"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
-    zdState.filters = { status: "", clinic: "", dateFrom: "", dateTo: "", search: "" };
+    zdState.filters = { dateFrom: "", dateTo: "", search: "" };
     zdState.currentPage = 1;
     loadZendeskTickets();
   });
