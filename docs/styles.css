@@ -1313,22 +1313,3 @@ button[type="submit"]:hover {
 }
 
 
-/* ===== Zendesk Insights ===== */
-.zd-insights-section {
-  padding: 0.25rem 0;
-}
-
-.zd-insights-grid {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.zd-insights-label {
-  font-size: 0.78rem;
-  color: var(--text-subtle);
-  font-weight: 500;
-  white-space: nowrap;
-  padding-right: 0.25rem;
-}

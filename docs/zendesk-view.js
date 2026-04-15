@@ -39,7 +39,7 @@ async function loadTicketInsights() {
   const grid = document.getElementById("zd-insights-grid");
   if (!grid || !sc) return;
 
-  grid.innerHTML = '<span class="zd-insights-label">Analysing last 100 tickets…</span>';
+  grid.innerHTML = '<span class="topic-chips-loading">Analysing last 100 tickets…</span>';
 
   try {
     // 1. Fetch last 100 tickets
@@ -67,7 +67,7 @@ async function loadTicketInsights() {
     const functionKey = document.body.dataset.apikey || "";
 
     const prompt =
-      `[ANALYSIS REQUEST] These are the subjects/first lines of 100 recent customer support tickets from Neko Health (preventive health scanning company). Identify the top 5–7 distinct contact reasons. For each return a JSON object: "name" (3–5 words), "count" (integer out of 100), "description" (one sentence), "emoji". Return ONLY a JSON array, no markdown, no extra text.\n\nTickets:\n${subjectsOnly}`;
+      `[ANALYSIS REQUEST] These are the subjects/first lines of 100 recent customer support tickets from Neko Health (preventive health scanning company). Identify the top 5–7 distinct contact reasons. For each return a JSON object: "name" (3–5 words), "count" (integer out of 100), "description" (one sentence), "sentiment" (one of: "positive", "negative", "mixed", "neutral"). Return ONLY a JSON array, no markdown, no extra text.\n\nTickets:\n${subjectsOnly}`;
 
     const headers = { "Content-Type": "application/json" };
     if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
@@ -89,19 +89,20 @@ async function loadTicketInsights() {
     renderInsightCards(themes);
   } catch (e) {
     console.error("[zendesk-view] insights error", e);
-    grid.innerHTML = `<span class="zd-insights-label" style="color:#dc2626">Could not load insights: ${zdEscapeHtml(e.message)}</span><button id="zd-refresh-insights" class="source-pill" style="font-size:0.82rem;border:none;background:none;color:var(--text-subtle);cursor:pointer;">↻ Retry</button>`;
-    document.getElementById("zd-refresh-insights")?.addEventListener("click", () => waitForSupabase(loadTicketInsights));
+    grid.innerHTML = `<span class="topic-chips-empty" style="color:#dc2626">Could not load insights: ${zdEscapeHtml(e.message)}</span>`;
   }
 }
 
 function renderInsightCards(themes) {
   const grid = document.getElementById("zd-insights-grid");
   if (!grid) return;
-  const pills = themes.map(t =>
-    `<span class="source-pill" title="${zdEscapeHtml(t.description)}">${t.emoji || "📋"} ${zdEscapeHtml(t.name)} <strong style="margin-left:4px;color:var(--accent-teal)">${t.count}</strong></span>`
-  ).join("");
-  grid.innerHTML = `<span class="zd-insights-label">Top reasons · last 100 tickets · AI</span>${pills}<button id="zd-refresh-insights" class="source-pill" style="font-size:0.82rem;border:none;background:none;color:var(--text-subtle);cursor:pointer;">↻ Refresh</button>`;
-  document.getElementById("zd-refresh-insights")?.addEventListener("click", () => waitForSupabase(loadTicketInsights));
+  const validSentiments = new Set(["positive", "negative", "mixed", "neutral"]);
+  grid.innerHTML = themes.map(t => {
+    const sentiment = validSentiments.has(t.sentiment) ? t.sentiment : "neutral";
+    return `<button class="topic-chip sentiment-${sentiment}" title="${zdEscapeHtml(t.description)}" type="button">
+      ${zdEscapeHtml(t.name)}<span class="topic-count">${t.count}</span>
+    </button>`;
+  }).join("");
 }
 
 function setupInsights() {
