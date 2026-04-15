@@ -32,12 +32,47 @@ function zdEscapeHtml(text) {
 
 // ---- Ticket Insights (last 100, AI-powered) ----
 
+const INSIGHTS_CACHE_KEY = "nekovibe_zd_insights";
+const INSIGHTS_CORPUS_KEY = "nekovibe_zd_corpus";
+const INSIGHTS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 let _insightCorpus = ""; // shared with chat
 
-async function loadTicketInsights() {
+function saveInsightsCache(themes, corpus) {
+  try {
+    localStorage.setItem(INSIGHTS_CACHE_KEY, JSON.stringify({ themes, ts: Date.now() }));
+    localStorage.setItem(INSIGHTS_CORPUS_KEY, corpus);
+  } catch (e) { /* storage full — skip */ }
+}
+
+function loadInsightsCache() {
+  try {
+    const raw = localStorage.getItem(INSIGHTS_CACHE_KEY);
+    if (!raw) return null;
+    const { themes, ts } = JSON.parse(raw);
+    if (Date.now() - ts > INSIGHTS_TTL_MS) return null; // stale
+    return themes;
+  } catch { return null; }
+}
+
+function loadCorpusCache() {
+  try { return localStorage.getItem(INSIGHTS_CORPUS_KEY) || ""; } catch { return ""; }
+}
+
+async function loadTicketInsights(force = false) {
   const sc = window.supabaseClient;
   const grid = document.getElementById("zd-insights-grid");
   if (!grid || !sc) return;
+
+  // Serve from cache if fresh
+  if (!force) {
+    const cached = loadInsightsCache();
+    if (cached) {
+      _insightCorpus = loadCorpusCache();
+      renderInsightCards(cached);
+      return;
+    }
+  }
 
   grid.innerHTML = '<span class="topic-chips-loading">Analysing last 100 tickets…</span>';
 
@@ -50,42 +85,36 @@ async function loadTicketInsights() {
     if (error) throw error;
 
     // 2. Build a lightweight subjects-only corpus for LLM clustering
-    //    (keeps the prompt small to avoid edge fn timeout)
     const subjectsOnly = (data || []).map((t, i) => {
       const subj = (t.subject || "").replace(/^Message from:.*?\+\d+\s*/i, "SMS: ").trim() || "—";
       const snippet = (t.description || "").slice(0, 80).replace(/\n/g, " ").trim();
       return `${i + 1}. ${subj}${snippet ? " — " + snippet : ""}`;
     }).join("\n");
 
-    // 3. Build full corpus for chat context (descriptions included)
+    // 3. Build full corpus for chat context
     _insightCorpus = (data || []).map((t, i) =>
       `[${i + 1}] Subject: ${t.subject || "—"}\nContent: ${(t.description || "").slice(0, 300)}`
     ).join("\n\n");
 
-    // 4. Ask the LLM to cluster using the compact subjects list
+    // 4. Ask the LLM to cluster
     const functionUrl = document.body.dataset.functionUrl || "";
     const functionKey = document.body.dataset.apikey || "";
-
     const prompt =
       `[ANALYSIS REQUEST] These are the subjects/first lines of 100 recent customer support tickets from Neko Health (preventive health scanning company). Identify the top 5–7 distinct contact reasons. For each return a JSON object: "name" (3–5 words), "count" (integer out of 100), "description" (one sentence), "sentiment" (one of: "positive", "negative", "mixed", "neutral"). Return ONLY a JSON array, no markdown, no extra text.\n\nTickets:\n${subjectsOnly}`;
 
     const headers = { "Content-Type": "application/json" };
     if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
 
-    const resp = await fetch(functionUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ prompt, sources: ["zendesk"] }),
-    });
+    const resp = await fetch(functionUrl, { method: "POST", headers, body: JSON.stringify({ prompt, sources: ["zendesk"] }) });
     if (!resp.ok) throw new Error(await resp.text());
     const result = await resp.json();
 
-    // 4. Parse JSON from answer
     const answer = result.answer || "";
     const jsonMatch = answer.match(/\[[\s\S]*\]/);
     if (!jsonMatch) throw new Error("AI did not return a parseable JSON array");
     const themes = JSON.parse(jsonMatch[0]);
 
+    saveInsightsCache(themes, _insightCorpus);
     renderInsightCards(themes);
   } catch (e) {
     console.error("[zendesk-view] insights error", e);
@@ -107,7 +136,7 @@ function renderInsightCards(themes) {
 
 function setupInsights() {
   document.getElementById("zd-refresh-insights")?.addEventListener("click", () => {
-    waitForSupabase(loadTicketInsights);
+    waitForSupabase(() => loadTicketInsights(true)); // force = true bypasses cache
   });
 }
 
@@ -377,7 +406,7 @@ export function activateZendeskTab() {
   waitForSupabase(() => {
     loadZendeskClinics();
     loadZendeskTickets();
-    if (!_insightCorpus) loadTicketInsights();
+    loadTicketInsights(); // uses cache if fresh
   });
 }
 window.activateZendeskTab = activateZendeskTab;
