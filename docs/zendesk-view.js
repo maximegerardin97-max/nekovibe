@@ -3,9 +3,17 @@
 const zdState = {
   currentPage: 1,
   pageSize: 50,
-  filters: { status: "", clinic: "", dateFrom: "", dateTo: "", search: "" },
+  filters: { dateFrom: "", dateTo: "", search: "" },
+  ticketType: "all", // "all" | "tickets" | "surveys"
   initialized: false,
 };
+
+// A ticket is a survey when its subject starts with "nekohealth.com"
+function applyTicketTypeFilter(q, type) {
+  if (type === "surveys") return q.ilike("subject", "nekohealth.com%");
+  if (type === "tickets") return q.not("subject", "ilike", "nekohealth.com%");
+  return q; // "all"
+}
 
 // ---- Helpers ----
 
@@ -32,8 +40,8 @@ function zdEscapeHtml(text) {
 
 // ---- Ticket Insights (last 100, AI-powered) ----
 
-const INSIGHTS_CACHE_KEY = "nekovibe_zd_insights";
-const INSIGHTS_CORPUS_KEY = "nekovibe_zd_corpus";
+const INSIGHTS_CACHE_KEY = "nekovibe_zd_insights_v2"; // v2: 500 tickets, surveys excluded
+const INSIGHTS_CORPUS_KEY = "nekovibe_zd_corpus_v2";
 const INSIGHTS_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 let _insightCorpus = ""; // shared with chat
@@ -74,25 +82,28 @@ async function loadTicketInsights(force = false) {
     }
   }
 
-  grid.innerHTML = '<span class="topic-chips-loading">Analysing last 100 tickets…</span>';
+  grid.innerHTML = '<span class="topic-chips-loading">Analysing last 500 tickets…</span>';
 
   try {
-    // 1. Fetch last 100 tickets
+    // 1. Fetch last 500 tickets (excluding surveys for cleaner insight signal)
     const { data, error } = await sc.from("zendesk_tickets")
-      .select("subject, description, contact_reason, category")
+      .select("subject, description")
+      .not("subject", "ilike", "nekohealth.com%")
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(500);
     if (error) throw error;
 
-    // 2. Build a lightweight subjects-only corpus for LLM clustering
+    // 2. Build subjects-only list (compact — avoids prompt size limits)
     const subjectsOnly = (data || []).map((t, i) => {
-      const subj = (t.subject || "").replace(/^Message from:.*?\+\d+\s*/i, "SMS: ").trim() || "—";
-      const snippet = (t.description || "").slice(0, 80).replace(/\n/g, " ").trim();
-      return `${i + 1}. ${subj}${snippet ? " — " + snippet : ""}`;
+      const subj = (t.subject || "")
+        .replace(/^Message from:.*?\+\d+\s*/i, "SMS")
+        .replace(/^Re:\s*/i, "")
+        .trim() || "—";
+      return `${i + 1}. ${subj}`;
     }).join("\n");
 
-    // 3. Build full corpus for chat context
-    _insightCorpus = (data || []).map((t, i) =>
+    // 3. Full corpus for chat context (last 100 for size)
+    _insightCorpus = (data || []).slice(0, 100).map((t, i) =>
       `[${i + 1}] Subject: ${t.subject || "—"}\nContent: ${(t.description || "").slice(0, 300)}`
     ).join("\n\n");
 
@@ -100,7 +111,7 @@ async function loadTicketInsights(force = false) {
     const functionUrl = document.body.dataset.functionUrl || "";
     const functionKey = document.body.dataset.apikey || "";
     const prompt =
-      `[ANALYSIS REQUEST] These are the subjects/first lines of 100 recent customer support tickets from Neko Health (preventive health scanning company). Identify the top 5–7 distinct contact reasons. For each return a JSON object: "name" (3–5 words), "count" (integer out of 100), "description" (one sentence), "sentiment" (one of: "positive", "negative", "mixed", "neutral"). Return ONLY a JSON array, no markdown, no extra text.\n\nTickets:\n${subjectsOnly}`;
+      `[ANALYSIS REQUEST] These are subjects from 500 recent customer support tickets from Neko Health (preventive health scanning). Identify the top 6–8 distinct contact reasons. Include "Invoice / receipt request" if relevant. For each return a JSON object: "name" (3–5 words), "count" (integer out of 500), "description" (one sentence), "sentiment" (one of: "positive", "negative", "mixed", "neutral"). Return ONLY a JSON array, no markdown, no extra text.\n\nTickets:\n${subjectsOnly}`;
 
     const headers = { "Content-Type": "application/json" };
     if (functionKey) { headers.apikey = functionKey; headers.Authorization = `Bearer ${functionKey}`; }
@@ -181,11 +192,13 @@ async function loadZendeskTickets() {
   if (!sc) { updateZendeskTicketsTable([], "Supabase not initialized."); return; }
 
   const tbody = document.getElementById("zd-tickets-tbody");
-  if (tbody) tbody.innerHTML = '<tr><td colspan="4" class="loading-state">Loading tickets...</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="loading-state">Loading tickets...</td></tr>';
 
   try {
     let q = sc.from("zendesk_tickets")
       .select("created_at, subject, description", { count: "estimated" });
+
+    q = applyTicketTypeFilter(q, zdState.ticketType);
 
     if (zdState.filters.dateFrom) q = q.gte("created_at", zdState.filters.dateFrom);
     if (zdState.filters.dateTo) {
@@ -278,6 +291,22 @@ function updateZendeskTicketsTable(rows, errorMessage) {
 }
 
 function setupZendeskTicketsTable() {
+  // Type toggle (All / Tickets / Surveys)
+  const typeButtons = [
+    { id: "zd-type-all",     type: "all" },
+    { id: "zd-type-tickets", type: "tickets" },
+    { id: "zd-type-surveys", type: "surveys" },
+  ];
+  typeButtons.forEach(({ id, type }) => {
+    document.getElementById(id)?.addEventListener("click", () => {
+      typeButtons.forEach(({ id: bid }) => document.getElementById(bid)?.classList.remove("active"));
+      document.getElementById(id)?.classList.add("active");
+      zdState.ticketType = type;
+      zdState.currentPage = 1;
+      loadZendeskTickets();
+    });
+  });
+
   document.getElementById("zd-apply-filters")?.addEventListener("click", () => {
     zdState.filters = {
       dateFrom: document.getElementById("zd-filter-date-from")?.value || "",
@@ -292,6 +321,9 @@ function setupZendeskTicketsTable() {
     ["zd-filter-date-from","zd-filter-date-to","zd-filter-search"]
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ""; });
     zdState.filters = { dateFrom: "", dateTo: "", search: "" };
+    zdState.ticketType = "all";
+    typeButtons.forEach(({ id }) => document.getElementById(id)?.classList.remove("active"));
+    document.getElementById("zd-type-all")?.classList.add("active");
     zdState.currentPage = 1;
     loadZendeskTickets();
   });

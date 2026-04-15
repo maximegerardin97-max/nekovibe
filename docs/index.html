@@ -237,10 +237,10 @@
               </form>
             </div>
 
-            <!-- Insights from last 100 tickets -->
+            <!-- Insights from last 500 tickets -->
             <div class="topic-chips-section">
               <div class="topic-chips-header">
-                <span class="topic-chips-label">Top contact reasons · last 100 tickets · AI</span>
+                <span class="topic-chips-label">Top contact reasons · last 500 tickets · AI</span>
                 <button id="zd-refresh-insights" class="topic-clear-btn" type="button">↻ Refresh</button>
               </div>
               <div id="zd-insights-grid" class="topic-chips-container">
@@ -251,6 +251,14 @@
             <!-- Tickets Table -->
             <div class="reviews-container">
               <div class="reviews-filters">
+                <div class="filter-group">
+                  <label>Type</label>
+                  <div class="graph-period-toggle" style="margin-top:0">
+                    <button class="toggle-btn active" id="zd-type-all" type="button">All</button>
+                    <button class="toggle-btn" id="zd-type-tickets" type="button">Tickets</button>
+                    <button class="toggle-btn" id="zd-type-surveys" type="button">Surveys</button>
+                  </div>
+                </div>
                 <div class="filter-group">
                   <label for="zd-filter-date-from">Date From</label>
                   <input type="date" id="zd-filter-date-from" />
