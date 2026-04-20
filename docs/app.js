@@ -729,14 +729,16 @@ async function loadReviewsForGraph(clinicFilter = "", sourceFilter = "", include
     const buildQ = (table) => {
       let q = supabaseClient.from(table)
         .select("published_at, rating, clinic_name")
-        .order("published_at", { ascending: true });
+        .order("published_at", { ascending: true })
+        .limit(10000);
       q = applyClinicFilter(q, clinicFilter);
       return q;
     };
     const buildCsatQ = () => {
       let q = supabaseClient.from("zendesk_csat")
         .select("created_at, rating, clinic_name")
-        .order("created_at", { ascending: true });
+        .order("created_at", { ascending: true })
+        .limit(10000);
       q = applyClinicFilter(q, clinicFilter);
       return q;
     };
